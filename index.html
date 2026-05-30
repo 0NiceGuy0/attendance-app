@@ -165,10 +165,12 @@
       <h3>⏱️ 초과근무</h3>
       <label>이 날(<span id="otDate"></span>) 초과근무 시간</label>
       <div class="ot-row">
-        <input type="number" id="otInput" min="0" step="0.5" placeholder="예: 1.5" style="flex:1;">
+        <input type="number" id="otHour" min="0" step="1" placeholder="0" style="flex:1;">
         <span class="hint" style="margin:0; white-space:nowrap;">시간</span>
+        <input type="number" id="otMin" min="0" max="59" step="1" placeholder="0" style="flex:1;">
+        <span class="hint" style="margin:0; white-space:nowrap;">분</span>
       </div>
-      <p class="hint" style="margin-top:12px;">이번 달 총 초과근무: <b id="otMonthTotal" style="color:var(--blue); font-size:16px;">0</b> 시간</p>
+      <p class="hint" style="margin-top:12px;">이번 달 총 초과근무: <b id="otMonthTotal" style="color:var(--blue); font-size:16px;">0분</b></p>
     </div>
   </section>
 
@@ -460,26 +462,46 @@ document.getElementById("progInput").addEventListener("input",e=>{
 });
 
 /* ===== 초과근무 ===== */
-function monthOvertimeTotal(ym){
+// 내부 저장은 '시간' 단위(소수)로 유지(기존 데이터 호환). 합산·표시는 분 기준으로 정확히 계산.
+function fmtHM(totalMin){
+  const h=Math.floor(totalMin/60), m=totalMin%60;
+  if(h>0 && m>0) return h+"시간 "+m+"분";
+  if(h>0) return h+"시간";
+  return m+"분";
+}
+function monthOvertimeMinutes(ym){
   if(!data.overtime) return 0;
   let total=0;
-  Object.keys(data.overtime).forEach(d=>{ if(d.slice(0,7)===ym){ const x=parseFloat(data.overtime[d]); if(!isNaN(x)) total+=x; } });
-  return Math.round(total*100)/100;
+  Object.keys(data.overtime).forEach(d=>{ if(d.slice(0,7)===ym){ const x=parseFloat(data.overtime[d]); if(!isNaN(x)) total+=Math.round(x*60); } });
+  return total;
 }
 function renderOvertime(){
   if(!data.overtime) data.overtime={};
   document.getElementById("otDate").textContent=curDate;
-  document.getElementById("otInput").value=(data.overtime[curDate]!=null?data.overtime[curDate]:"");
-  document.getElementById("otMonthTotal").textContent=monthOvertimeTotal(curDate.slice(0,7));
+  const v=data.overtime[curDate];
+  if(v!=null && !isNaN(parseFloat(v))){
+    const totalMin=Math.round(parseFloat(v)*60);
+    document.getElementById("otHour").value=Math.floor(totalMin/60);
+    document.getElementById("otMin").value=totalMin%60;
+  } else {
+    document.getElementById("otHour").value="";
+    document.getElementById("otMin").value="";
+  }
+  document.getElementById("otMonthTotal").textContent=fmtHM(monthOvertimeMinutes(curDate.slice(0,7)));
 }
-document.getElementById("otInput").addEventListener("input",e=>{
+function commitOvertime(){
   if(!data.overtime) data.overtime={};
-  const v=e.target.value;
-  if(v==="" || isNaN(parseFloat(v))) delete data.overtime[curDate];
-  else data.overtime[curDate]=parseFloat(v);
-  document.getElementById("otMonthTotal").textContent=monthOvertimeTotal(curDate.slice(0,7));
+  const h=parseInt(document.getElementById("otHour").value,10);
+  const m=parseInt(document.getElementById("otMin").value,10);
+  const hh=isNaN(h)?0:h, mm=isNaN(m)?0:m;
+  const totalMin=hh*60+mm;
+  if(totalMin<=0) delete data.overtime[curDate];
+  else data.overtime[curDate]=Math.round((totalMin/60)*1000)/1000; // 시간 단위로 저장
+  document.getElementById("otMonthTotal").textContent=fmtHM(monthOvertimeMinutes(curDate.slice(0,7)));
   save();
-});
+}
+document.getElementById("otHour").addEventListener("input",commitOvertime);
+document.getElementById("otMin").addEventListener("input",commitOvertime);
 
 /* ===== 출결 선택 모달 ===== */
 let modalStudent=null, modalStatus=null, modalPeriod=null, modalProof=null;
