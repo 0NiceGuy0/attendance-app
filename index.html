@@ -606,7 +606,15 @@ document.getElementById("btnCopy").onclick=async()=>{
   const list=c.students.filter(s=>rec[s.id]&&rec[s.id].status)
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(list.length===0){ toast("출석 외 학생이 없습니다"); return; }
-  const text=list.map(s=>s.id+" "+s.name+" "+rec[s.id].status).join("\n");
+  function periodSuffix(r){
+    if(!r.period) return "";
+    const s=r.status||"";
+    if(s.includes("지각")) return "(~"+r.period+")";
+    if(s.includes("조퇴")) return "("+r.period+"~)";
+    if(s.includes("결과")) return "("+r.period+")";
+    return "";
+  }
+  const text=list.map(s=>{ const r=rec[s.id]; return s.id+" "+s.name+" "+r.status+periodSuffix(r); }).join("\n");
   try{ await navigator.clipboard.writeText(text); toast(list.length+"명 복사되었습니다"); }
   catch(e){
     const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
@@ -620,8 +628,32 @@ document.getElementById("btnCopy").onclick=async()=>{
 function resolveStatus(raw){
   let s=(raw||"").replace(/\s/g,"");
   if(!s) return null;
-  if(STATUSES.indexOf(s)>=0) return s;
-  if(s.indexOf("인정")===0){ const cand="출석"+s; if(STATUSES.indexOf(cand)>=0) return cand; }
+
+  function tryMatch(v){
+    if(!v) return null;
+    if(STATUSES.indexOf(v)>=0) return v;
+    // "인정..." → "출석인정..."
+    if(v.startsWith("인정")){ const c="출석"+v; if(STATUSES.indexOf(c)>=0) return c; }
+    return null;
+  }
+
+  // 1. 직접 매치
+  let m=tryMatch(s); if(m) return m;
+
+  // 2. 후행 수식어 제거 후 재시도
+  //    · "으로 변경합니다", "으로 수정합니다" (마침표 있거나 없거나)
+  //    · 콜론(:) 이후 텍스트
+  //    · 마지막 괄호 쌍 한 번 제거
+  let t=s
+    .replace(/으로(변경|수정)합니다[.]?$/, "")
+    .replace(/:.*$/, "")
+    .replace(/\([^)]*\)$/, "");
+  if(t!==s){ m=tryMatch(t); if(m) return m; }
+
+  // 3. 남아있는 괄호 모두 제거
+  let t2=t.replace(/\([^)]*\)/g,"");
+  if(t2!==t){ m=tryMatch(t2); if(m) return m; }
+
   return null;
 }
 function parseKakaoDate(line){
@@ -651,6 +683,8 @@ document.getElementById("btnKakao").onclick=()=>{
     const dt=parseKakaoDate(line);
     const stripped=line.replace(/\[[^\]]*\]/g,"").trim();
     if(dt && !/\d{3,6}\s+\S/.test(stripped)){ return; } // 날짜만 있는 줄은 무시
+    // 학번 없이 날짜·안내 성격인 줄 (예: "6/1(월)", "변경합니다" 등) 조용히 무시
+    if(!stripped || !/\d{3,6}/.test(stripped)){ return; }
     const tokens=stripped.split(/[\s\t]+/).filter(Boolean);
     if(tokens.length<3 || !/^\d{3,6}$/.test(tokens[0])){ fails.push({line:orig.trim(), why:"형식 인식 불가"}); return; }
     const id=tokens[0], name=tokens[1];
