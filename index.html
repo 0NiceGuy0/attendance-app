@@ -318,6 +318,7 @@ let data = normalizeData(loadData());
 function normalizeData(d){
   if(!d.progress) d.progress={};   // {classroomId:{date:text}}
   if(!d.overtime) d.overtime={};   // {date:hours}  (교사 전체, 교실 무관)
+  if(!d.kakaoInputs) d.kakaoInputs={};  // {date:text}
   return d;
 }
 
@@ -502,6 +503,10 @@ function renderOvertime(){
   }
   document.getElementById("otMonthTotal").textContent=fmtHM(monthOvertimeMinutes(curDate.slice(0,7)));
   const kd=document.getElementById("kakaoDate"); if(kd) kd.textContent=curDate;
+  // 날짜별 카톡 입력 내용 복원
+  if(!data.kakaoInputs) data.kakaoInputs={};
+  const ki=document.getElementById("kakaoInput"); if(ki) ki.value=data.kakaoInputs[curDate]||"";
+  const kr=document.getElementById("kakaoResult"); if(kr) kr.innerHTML="";
 }
 function commitOvertime(){
   if(!data.overtime) data.overtime={};
@@ -625,6 +630,12 @@ function parseKakaoDate(line){
   const z=n=>String(n).padStart(2,"0");
   return m[1]+"-"+z(m[2])+"-"+z(m[3]);
 }
+document.getElementById("kakaoInput").addEventListener("input",e=>{
+  if(!data.kakaoInputs) data.kakaoInputs={};
+  const v=e.target.value;
+  if(v.trim()) data.kakaoInputs[curDate]=v; else delete data.kakaoInputs[curDate];
+  save();
+});
 document.getElementById("btnKakao").onclick=()=>{
   const c=curClass(); if(!c){ toast("교실을 먼저 선택하세요"); return; }
   const raw=document.getElementById("kakaoInput").value;
