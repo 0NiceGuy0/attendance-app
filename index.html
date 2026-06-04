@@ -871,19 +871,21 @@ document.getElementById("btnRange").onclick=()=>{
   if(!f||!t){ toast("기간을 선택하세요"); return; }
   if(f>t){ const x=f; f=t; t=x; }
   const recs=data.records[c.id]||{};
-  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofile:0});
-  Object.keys(recs).forEach(date=>{ if(date<f||date>t) return; const rec=recs[date];
-    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++; if(rec[id].proof==="미제출") tally[id].nofile++; }); });
+  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofileDates:[]});
+  Object.keys(recs).sort().forEach(date=>{ if(date<f||date>t) return; const rec=recs[date];
+    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++; if(rec[id].proof==="미제출") tally[id].nofileDates.push(date); }); });
   const rows=c.students.filter(s=>{const x=tally[s.id]; return x.absent||x.late||x.early||x.result||x.none;})
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(rows.length===0){ box.innerHTML='<div class="empty-msg">해당 기간에 출석 외 기록이 없습니다.</div>'; return; }
+  function fmtMD(d){ const p=d.split("-"); return parseInt(p[1])+"/"+parseInt(p[2]); }
   let html=`<p class="hint" style="margin-top:12px;">${f} ~ ${t}</p>`;
-  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙<br>미제출</th></tr>';
+  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th></tr>';
   let sums={absent:0,late:0,early:0,result:0,none:0,nofile:0};
   rows.forEach(s=>{ const x=tally[s.id];
-    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofile;
-    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td>${x.nofile||""}</td></tr>`; });
-  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile}</td></tr></table>`;
+    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileDates.length;
+    const nofileTxt=x.nofileDates.length?x.nofileDates.map(fmtMD).join(", "):"";
+    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;font-size:11px;">${nofileTxt}</td></tr>`; });
+  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile||""}</td></tr></table>`;
   box.innerHTML=html;
 };
 
@@ -970,8 +972,10 @@ function initSyncUI(){
 }
 
 /* ===== 초기화 ===== */
-document.getElementById("statFrom").value=todayStr();
-document.getElementById("statTo").value=todayStr();
+function monthStart(){ const d=new Date(),z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-01"; }
+function monthEnd(){ const d=new Date(),z=n=>String(n).padStart(2,"0"),last=new Date(d.getFullYear(),d.getMonth()+1,0); return last.getFullYear()+"-"+z(last.getMonth()+1)+"-"+z(last.getDate()); }
+document.getElementById("statFrom").value=monthStart();
+document.getElementById("statTo").value=monthEnd();
 localStorage.setItem(KEY, JSON.stringify(data));
 fillClassSelects();
 renderAttendance();
