@@ -150,6 +150,7 @@
     <div class="legend" id="attLegend"></div>
     <div class="row">
       <button class="btn" id="btnCopy">📋 복사하기</button>
+      <button class="btn sec" id="btnAttView" style="white-space:nowrap;">👨‍🏫 교사 시점</button>
     </div>
     <p class="hint">학생을 탭하면 출결 상황을 선택할 수 있습니다. 변경 사항은 교실·날짜별로 자동 저장됩니다.</p>
 
@@ -208,7 +209,10 @@
         <h3>자리 배치 (드래그)</h3>
         <p class="hint">학생 칸을 길게 눌러 끌어다 놓으면 자리가 서로 바뀝니다.</p>
         <div id="setGrid" class="grid"></div>
-        <button class="btn sec" id="btnAutoSeat" style="margin-top:10px;">학번 순으로 자동 배치</button>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn sec" id="btnRandomSeat">🎲 랜덤 배치</button>
+          <button class="btn sec" id="btnSetView" style="white-space:nowrap;">👨‍🏫 교사 시점</button>
+        </div>
       </div>
     </div>
 
@@ -425,6 +429,19 @@ const hdrDate=document.getElementById("hdrDate");
 hdrDate.value=curDate;
 hdrDate.addEventListener("change",()=>{ curDate=hdrDate.value||todayStr(); renderAttendance(); });
 
+/* ===== 시점 토글 ===== */
+let viewMode="teacher"; // "teacher" | "student"
+function updateViewBtns(){
+  const label = viewMode==="teacher" ? "👨‍🏫 교사 시점" : "🧑‍🎓 학생 시점";
+  const a=document.getElementById("btnAttView"), b=document.getElementById("btnSetView");
+  if(a) a.textContent=label;
+  if(b) b.textContent=label;
+}
+function seatIdx(i){ return viewMode==="student" ? 35-i : i; }
+
+document.getElementById("btnAttView").onclick=()=>{ viewMode=viewMode==="teacher"?"student":"teacher"; updateViewBtns(); renderAttendance(); };
+document.getElementById("btnSetView").onclick=()=>{ viewMode=viewMode==="teacher"?"student":"teacher"; updateViewBtns(); renderSetGrid(); };
+
 /* ===== 출석부 렌더 ===== */
 function renderAttendance(){
   const grid=document.getElementById("attGrid");
@@ -432,7 +449,7 @@ function renderAttendance(){
   const c=curClass();
   const rec=(data.records[c.id]||{})[curDate]||{};
   for(let i=0;i<36;i++){
-    const id=c.seats[i];
+    const id=c.seats[seatIdx(i)];
     const cell=document.createElement("div");
     cell.className="seat";
     const st=id?studentById(id):null;
@@ -740,18 +757,20 @@ document.getElementById("btnApplyRoster").onclick=()=>{
   for(let i=0;i<36&&idx<unseated.length;i++){ if(!seats[i]) seats[i]=unseated[idx++].id; }
   c.seats=seats; save(); renderSettings(); toast(ns.length+"명 적용됨");
 };
-document.getElementById("btnAutoSeat").onclick=()=>{
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+document.getElementById("btnRandomSeat").onclick=()=>{
   const c=curClass();
-  const sorted=[...c.students].sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
-  const seats=blankSeats(); sorted.slice(0,36).forEach((s,i)=>seats[i]=s.id);
-  c.seats=seats; save(); renderSetGrid(); toast("자동 배치 완료");
+  const seats=blankSeats();
+  shuffle([...c.students]).slice(0,36).forEach((s,i)=>seats[i]=s.id);
+  c.seats=seats; save(); renderSetGrid(); toast("랜덤 배치 완료");
 };
 function renderSetGrid(){
   const c=curClass();
   const grid=document.getElementById("setGrid"); grid.innerHTML="";
   for(let i=0;i<36;i++){
-    const id=c.seats[i];
-    const cell=document.createElement("div"); cell.className="seat"; cell.dataset.idx=i;
+    const si=seatIdx(i);
+    const id=c.seats[si];
+    const cell=document.createElement("div"); cell.className="seat"; cell.dataset.idx=si;
     const st=id?studentById(id):null;
     if(st){
       const nm=document.createElement("div"); nm.className="nm"; nm.textContent=st.name; cell.appendChild(nm);
