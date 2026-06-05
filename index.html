@@ -187,14 +187,13 @@
   <!-- ===== 설정 ===== -->
   <section class="screen" id="scSet">
     <div class="card">
-      <h3>교실 선택 / 관리</h3>
-      <select id="setClassSel"></select>
-      <div class="row">
+      <h3>교실 관리</h3>
+      <div class="row" style="margin-top:0;">
         <button class="btn sec sm" id="btnAddClass">+ 새 교실</button>
         <button class="btn gray sm" id="btnRenameClass">이름 변경</button>
         <button class="btn danger sm" id="btnDelClass">삭제</button>
       </div>
-      <p class="hint">교실을 선택하면 아래 명단·자리배치와 출석부·통계 화면이 그 교실에 맞게 바뀝니다.</p>
+      <p class="hint">상단에서 교실을 선택하면 아래 명단·자리배치와 출석부·통계 화면이 그 교실에 맞게 바뀝니다.</p>
     </div>
 
     <div id="setBody">
@@ -233,10 +232,6 @@
 
   <!-- ===== 통계 ===== -->
   <section class="screen" id="scStat">
-    <div class="card" style="margin-bottom:10px; padding:10px 14px;">
-      <label style="margin:0 0 6px;">교실 선택</label>
-      <select id="statClassSel"></select>
-    </div>
     <div class="seg">
       <button id="segDay" class="active">일자별</button>
       <button id="segRange">기간별</button>
@@ -380,12 +375,10 @@ function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg
 function fillClassSelects(){
   const opts=data.classrooms.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
   const hdr=document.getElementById("hdrClass");
-  const set=document.getElementById("setClassSel");
-  hdr.innerHTML=opts; set.innerHTML=opts;
-  hdr.value=data.currentId; set.value=data.currentId;
+  hdr.innerHTML=opts;
+  hdr.value=data.currentId;
 }
-document.getElementById("hdrClass").addEventListener("change",e=>{ data.currentId=e.target.value; save(); fillClassSelects(); renderAttendance(); });
-document.getElementById("setClassSel").addEventListener("change",e=>{ data.currentId=e.target.value; save(); fillClassSelects(); renderSettings(); });
+document.getElementById("hdrClass").addEventListener("change",e=>{ data.currentId=e.target.value; save(); fillClassSelects(); refreshActive(); });
 
 document.getElementById("btnAddClass").onclick=()=>{
   const name=(prompt("새 교실 이름을 입력하세요","교실 "+(data.classrooms.length+1))||"").trim();
@@ -420,7 +413,7 @@ document.querySelectorAll("nav button").forEach(b=>{
     document.getElementById(b.dataset.sc).classList.add("active");
     if(b.dataset.sc==="scSet") renderSettings();
     if(b.dataset.sc==="scAtt") renderAttendance();
-    if(b.dataset.sc==="scStat"){ fillStatClassSel(); renderStatDay(); }
+    if(b.dataset.sc==="scStat") renderStatDay();
   });
 });
 
@@ -822,24 +815,7 @@ function cleanupDrag(){
 }
 
 /* ===== 통계 교실 선택 ===== */
-let statClassId = null;
-function statClass(){
-  return data.classrooms.find(x=>x.id===statClassId) || curClass();
-}
-function fillStatClassSel(){
-  const sel=document.getElementById("statClassSel"); if(!sel) return;
-  sel.innerHTML=data.classrooms.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  if(!statClassId || !data.classrooms.find(x=>x.id===statClassId)) statClassId=data.currentId;
-  sel.value=statClassId;
-}
-document.getElementById("statClassSel").addEventListener("change",e=>{
-  statClassId=e.target.value;
-  const which=document.getElementById("segDay").classList.contains("active")?"day":
-               document.getElementById("segRange").classList.contains("active")?"range":"prog";
-  if(which==="day") renderStatDay();
-  else if(which==="range"){ document.getElementById("statRangeResult").innerHTML=""; }
-  else renderStatProg();
-});
+function statClass(){ return curClass(); }
 
 /* ===== 통계 ===== */
 document.getElementById("statDate").value=todayStr();
