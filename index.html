@@ -635,6 +635,25 @@ document.getElementById("btnCopy").onclick=async()=>{
 };
 
 /* ===== 카카오톡 메시지 자동 기록 ===== */
+
+// 학번 대안 형식 생성 (예: 20209 ↔ 2209, 30804 ↔ 3804)
+// 한국 학교 학번: G0CNN(5자리) ↔ GCNN(4자리), 두 번째 자리 '0' 유무 차이
+function altIds(id){
+  const alts=[id];
+  if(id.length===5 && id[1]==='0') alts.push(id[0]+id.slice(2));   // 20209→2209
+  if(id.length===4)                alts.push(id[0]+'0'+id.slice(1)); // 2209→20209
+  if(id.length===6 && id[1]==='0') alts.push(id[0]+id.slice(2));   // 201209→21209
+  if(id.length===5 && id[1]!=='0') alts.push(id[0]+'0'+id.slice(1));// 21209→201209
+  return alts;
+}
+function findStudent(students, id){
+  for(const a of altIds(id)){
+    const s=students.find(x=>x.id===a);
+    if(s) return s;
+  }
+  return null;
+}
+
 function resolveStatus(raw){
   let s=(raw||"").replace(/\s/g,"");
   if(!s) return null;
@@ -642,7 +661,6 @@ function resolveStatus(raw){
   function tryMatch(v){
     if(!v) return null;
     if(STATUSES.indexOf(v)>=0) return v;
-    // "인정..." → "출석인정..."
     if(v.startsWith("인정")){ const c="출석"+v; if(STATUSES.indexOf(c)>=0) return c; }
     return null;
   }
@@ -650,12 +668,11 @@ function resolveStatus(raw){
   // 1. 직접 매치
   let m=tryMatch(s); if(m) return m;
 
-  // 2. 후행 수식어 제거 후 재시도
-  //    · "으로 변경합니다", "으로 수정합니다" (마침표 있거나 없거나)
-  //    · 콜론(:) 이후 텍스트
-  //    · 마지막 괄호 쌍 한 번 제거
+  // 2. 후행 수식어 제거
+  //    · "으로 변경/수정/정정합니다", "바랍니다", 콜론 이후, 마지막 괄호
   let t=s
-    .replace(/으로(변경|수정)합니다[.]?$/, "")
+    .replace(/으로(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/, "")
+    .replace(/(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/, "")
     .replace(/:.*$/, "")
     .replace(/\([^)]*\)$/, "");
   if(t!==s){ m=tryMatch(t); if(m) return m; }
@@ -696,16 +713,31 @@ document.getElementById("btnKakao").onclick=()=>{
     // 학번 없이 날짜·안내 성격인 줄 (예: "6/1(월)", "변경합니다" 등) 조용히 무시
     if(!stripped || !/\d{3,6}/.test(stripped)){ return; }
     const tokens=stripped.split(/[\s\t]+/).filter(Boolean);
-    if(tokens.length<3 || !/^\d{3,6}$/.test(tokens[0])){ fails.push({line:orig.trim(), why:"형식 인식 불가"}); return; }
-    const id=tokens[0], name=tokens[1];
-    const status=resolveStatus(tokens.slice(2).join(""));
+    if(tokens.length<2 || !/^\d{3,6}$/.test(tokens[0])){ fails.push({line:orig.trim(), why:"형식 인식 불가"}); return; }
+    const msgId=tokens[0];
+    // 이름 없이 "학번 출결상황" 형식 vs "학번 이름 출결상황" 형식 판별
+    let name=null, statusRaw=null;
+    if(tokens.length===2){
+      // 토큰이 2개: 학번 + 출결상황 (이름 생략)
+      statusRaw=tokens[1];
+    } else {
+      // 토큰이 3개 이상: 학번 + 이름 + 출결상황
+      name=tokens[1];
+      statusRaw=tokens.slice(2).join("");
+      // 이름 자리가 출결상황처럼 보이면 이름 없는 형식으로 재시도
+      if(!resolveStatus(statusRaw) && resolveStatus(tokens.slice(1).join(""))){
+        name=null; statusRaw=tokens.slice(1).join("");
+      }
+    }
+    const status=resolveStatus(statusRaw);
     if(!status){ fails.push({line:orig.trim(), why:"출결 상황 인식 불가"}); return; }
-    const stu=c.students.find(s=>s.id===id);
-    if(!stu){ fails.push({line:orig.trim(), why:"명단에 없는 학번("+id+")"}); return; }
+    const stu=findStudent(c.students, msgId);
+    if(!stu){ fails.push({line:orig.trim(), why:"명단에 없는 학번("+msgId+")"}); return; }
     const entry={status};
     if(needsProof(status)) entry.proof="미제출";
-    rec[id]=entry; applied++;
-    ok.push({id, name:stu.name, status, mismatch:(name && name!==stu.name)});
+    // 반드시 명단의 학번(stu.id)으로 저장 (메시지 학번과 형식이 달라도 정상 반영)
+    rec[stu.id]=entry; applied++;
+    ok.push({id:stu.id, name:stu.name, status, mismatch:(name && name!==stu.name)});
   });
   if(applied>0){ save(); renderAttendance(); }
   const box=document.getElementById("kakaoResult");
