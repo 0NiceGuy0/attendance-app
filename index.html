@@ -150,13 +150,14 @@
     <div class="legend" id="attLegend"></div>
     <div class="row">
       <button class="btn" id="btnCopy">📋 복사하기</button>
+      <button class="btn sec" id="btnAttView" style="white-space:nowrap;">👨‍🏫 교사 시점</button>
     </div>
     <p class="hint">학생을 탭하면 출결 상황을 선택할 수 있습니다. 변경 사항은 교실·날짜별로 자동 저장됩니다.</p>
 
     <div class="card">
       <h3>💬 카카오톡 메시지로 자동 기록</h3>
       <label>카톡 대화 내용을 복사해 붙여넣으세요 (상단에서 선택한 날짜 <span id="kakaoDate"></span>에 기록됩니다)</label>
-      <textarea id="kakaoInput" style="min-height:90px;" placeholder="예)&#10;2026년 5월 28일 목요일&#10;[황정한] [오전 8:17] 2203 김가은 질병결석&#10;[나상희] [오전 8:32] 2908 김우일 질병지각&#10;2919 윤난주 질병결석"></textarea>
+      <textarea id="kakaoInput" style="min-height:90px;" placeholder="예)&#10;2026년 5월 28일 목요일&#10;[***] [오전 8:17] 2203 *** 질병결석&#10;[***] [오전 8:32] 2908 *** 질병지각&#10;2919 *** 질병결석"></textarea>
       <p class="hint">보낸 사람·시각([...])과 날짜 줄은 자동 무시하고 학번·이름·출결상황만 인식합니다. 명단에 있는 학번만 기록되며, 못 알아본 줄은 아래에 따로 표시됩니다. "인정결석"처럼 줄여 써도 "출석인정결석"으로 자동 변환됩니다.</p>
       <button class="btn" id="btnKakao" style="margin-top:10px;">붙여넣은 내용 자동 기록</button>
       <div id="kakaoResult"></div>
@@ -186,14 +187,13 @@
   <!-- ===== 설정 ===== -->
   <section class="screen" id="scSet">
     <div class="card">
-      <h3>교실 선택 / 관리</h3>
-      <select id="setClassSel"></select>
-      <div class="row">
+      <h3>교실 관리</h3>
+      <div class="row" style="margin-top:0;">
         <button class="btn sec sm" id="btnAddClass">+ 새 교실</button>
         <button class="btn gray sm" id="btnRenameClass">이름 변경</button>
         <button class="btn danger sm" id="btnDelClass">삭제</button>
       </div>
-      <p class="hint">교실을 선택하면 아래 명단·자리배치와 출석부·통계 화면이 그 교실에 맞게 바뀝니다.</p>
+      <p class="hint">상단에서 교실을 선택하면 아래 명단·자리배치와 출석부·통계 화면이 그 교실에 맞게 바뀝니다.</p>
     </div>
 
     <div id="setBody">
@@ -208,7 +208,10 @@
         <h3>자리 배치 (드래그)</h3>
         <p class="hint">학생 칸을 길게 눌러 끌어다 놓으면 자리가 서로 바뀝니다.</p>
         <div id="setGrid" class="grid"></div>
-        <button class="btn sec" id="btnAutoSeat" style="margin-top:10px;">학번 순으로 자동 배치</button>
+        <div class="row" style="margin-top:10px;">
+          <button class="btn sec" id="btnRandomSeat">🎲 랜덤 배치</button>
+          <button class="btn sec" id="btnSetView" style="white-space:nowrap;">👨‍🏫 교사 시점</button>
+        </div>
       </div>
     </div>
 
@@ -314,6 +317,7 @@ let data = normalizeData(loadData());
 function normalizeData(d){
   if(!d.progress) d.progress={};   // {classroomId:{date:text}}
   if(!d.overtime) d.overtime={};   // {date:hours}  (교사 전체, 교실 무관)
+  if(!d.kakaoInputs) d.kakaoInputs={};  // {date:text}
   return d;
 }
 
@@ -371,12 +375,10 @@ function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg
 function fillClassSelects(){
   const opts=data.classrooms.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
   const hdr=document.getElementById("hdrClass");
-  const set=document.getElementById("setClassSel");
-  hdr.innerHTML=opts; set.innerHTML=opts;
-  hdr.value=data.currentId; set.value=data.currentId;
+  hdr.innerHTML=opts;
+  hdr.value=data.currentId;
 }
-document.getElementById("hdrClass").addEventListener("change",e=>{ data.currentId=e.target.value; save(); fillClassSelects(); renderAttendance(); });
-document.getElementById("setClassSel").addEventListener("change",e=>{ data.currentId=e.target.value; save(); fillClassSelects(); renderSettings(); });
+document.getElementById("hdrClass").addEventListener("change",e=>{ data.currentId=e.target.value; save(); fillClassSelects(); refreshActive(); });
 
 document.getElementById("btnAddClass").onclick=()=>{
   const name=(prompt("새 교실 이름을 입력하세요","교실 "+(data.classrooms.length+1))||"").trim();
@@ -420,6 +422,19 @@ const hdrDate=document.getElementById("hdrDate");
 hdrDate.value=curDate;
 hdrDate.addEventListener("change",()=>{ curDate=hdrDate.value||todayStr(); renderAttendance(); });
 
+/* ===== 시점 토글 ===== */
+let viewMode="teacher"; // "teacher" | "student"
+function updateViewBtns(){
+  const label = viewMode==="teacher" ? "👨‍🏫 교사 시점" : "🧑‍🎓 학생 시점";
+  const a=document.getElementById("btnAttView"), b=document.getElementById("btnSetView");
+  if(a) a.textContent=label;
+  if(b) b.textContent=label;
+}
+function seatIdx(i){ return viewMode==="student" ? 35-i : i; }
+
+document.getElementById("btnAttView").onclick=()=>{ viewMode=viewMode==="teacher"?"student":"teacher"; updateViewBtns(); renderAttendance(); };
+document.getElementById("btnSetView").onclick=()=>{ viewMode=viewMode==="teacher"?"student":"teacher"; updateViewBtns(); renderSetGrid(); };
+
 /* ===== 출석부 렌더 ===== */
 function renderAttendance(){
   const grid=document.getElementById("attGrid");
@@ -427,7 +442,7 @@ function renderAttendance(){
   const c=curClass();
   const rec=(data.records[c.id]||{})[curDate]||{};
   for(let i=0;i<36;i++){
-    const id=c.seats[i];
+    const id=c.seats[seatIdx(i)];
     const cell=document.createElement("div");
     cell.className="seat";
     const st=id?studentById(id):null;
@@ -498,6 +513,10 @@ function renderOvertime(){
   }
   document.getElementById("otMonthTotal").textContent=fmtHM(monthOvertimeMinutes(curDate.slice(0,7)));
   const kd=document.getElementById("kakaoDate"); if(kd) kd.textContent=curDate;
+  // 날짜별 카톡 입력 내용 복원
+  if(!data.kakaoInputs) data.kakaoInputs={};
+  const ki=document.getElementById("kakaoInput"); if(ki) ki.value=data.kakaoInputs[curDate]||"";
+  const kr=document.getElementById("kakaoResult"); if(kr) kr.innerHTML="";
 }
 function commitOvertime(){
   if(!data.overtime) data.overtime={};
@@ -594,10 +613,31 @@ document.getElementById("mSave").onclick=()=>{
 document.getElementById("btnCopy").onclick=async()=>{
   const c=curClass();
   const rec=(data.records[c.id]||{})[curDate]||{};
-  const list=c.students.filter(s=>rec[s.id]&&rec[s.id].status)
+  const isSaengMyeong = c.name.includes("생명");
+
+  function periodSuffix(r){
+    if(!r.period) return "";
+    const s=r.status||"";
+    if(s.includes("지각")) return "(~"+r.period+")";
+    if(s.includes("조퇴")) return "("+r.period+"~)";
+    if(s.includes("결과")) return "("+r.period+")";
+    return "";
+  }
+
+  let list = c.students.filter(s=>rec[s.id]&&rec[s.id].status)
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
-  if(list.length===0){ toast("출석 외 학생이 없습니다"); return; }
-  const text=list.map(s=>s.id+" "+s.name+" "+rec[s.id].status).join("\n");
+
+  let text;
+  if(isSaengMyeong){
+    // 생명 포함 교실: 미입실만, "미입실입니다." 형식
+    list = list.filter(s=>rec[s.id].status==="미입실");
+    if(list.length===0){ toast("미입실 학생이 없습니다"); return; }
+    text = list.map(s=>s.id+" "+s.name+" 미입실입니다.").join("\n");
+  } else {
+    if(list.length===0){ toast("출석 외 학생이 없습니다"); return; }
+    text = list.map(s=>{ const r=rec[s.id]; return s.id+" "+s.name+" "+r.status+periodSuffix(r); }).join("\n");
+  }
+
   try{ await navigator.clipboard.writeText(text); toast(list.length+"명 복사되었습니다"); }
   catch(e){
     const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
@@ -608,11 +648,52 @@ document.getElementById("btnCopy").onclick=async()=>{
 };
 
 /* ===== 카카오톡 메시지 자동 기록 ===== */
+
+// 학번 대안 형식 생성 (예: 20209 ↔ 2209, 30804 ↔ 3804)
+// 한국 학교 학번: G0CNN(5자리) ↔ GCNN(4자리), 두 번째 자리 '0' 유무 차이
+function altIds(id){
+  const alts=[id];
+  if(id.length===5 && id[1]==='0') alts.push(id[0]+id.slice(2));   // 20209→2209
+  if(id.length===4)                alts.push(id[0]+'0'+id.slice(1)); // 2209→20209
+  if(id.length===6 && id[1]==='0') alts.push(id[0]+id.slice(2));   // 201209→21209
+  if(id.length===5 && id[1]!=='0') alts.push(id[0]+'0'+id.slice(1));// 21209→201209
+  return alts;
+}
+function findStudent(students, id){
+  for(const a of altIds(id)){
+    const s=students.find(x=>x.id===a);
+    if(s) return s;
+  }
+  return null;
+}
+
 function resolveStatus(raw){
   let s=(raw||"").replace(/\s/g,"");
   if(!s) return null;
-  if(STATUSES.indexOf(s)>=0) return s;
-  if(s.indexOf("인정")===0){ const cand="출석"+s; if(STATUSES.indexOf(cand)>=0) return cand; }
+
+  function tryMatch(v){
+    if(!v) return null;
+    if(STATUSES.indexOf(v)>=0) return v;
+    if(v.startsWith("인정")){ const c="출석"+v; if(STATUSES.indexOf(c)>=0) return c; }
+    return null;
+  }
+
+  // 1. 직접 매치
+  let m=tryMatch(s); if(m) return m;
+
+  // 2. 후행 수식어 제거
+  //    · "으로 변경/수정/정정합니다", "바랍니다", 콜론 이후, 마지막 괄호
+  let t=s
+    .replace(/으로(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/, "")
+    .replace(/(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/, "")
+    .replace(/:.*$/, "")
+    .replace(/\([^)]*\)$/, "");
+  if(t!==s){ m=tryMatch(t); if(m) return m; }
+
+  // 3. 남아있는 괄호 모두 제거
+  let t2=t.replace(/\([^)]*\)/g,"");
+  if(t2!==t){ m=tryMatch(t2); if(m) return m; }
+
   return null;
 }
 function parseKakaoDate(line){
@@ -621,6 +702,12 @@ function parseKakaoDate(line){
   const z=n=>String(n).padStart(2,"0");
   return m[1]+"-"+z(m[2])+"-"+z(m[3]);
 }
+document.getElementById("kakaoInput").addEventListener("input",e=>{
+  if(!data.kakaoInputs) data.kakaoInputs={};
+  const v=e.target.value;
+  if(v.trim()) data.kakaoInputs[curDate]=v; else delete data.kakaoInputs[curDate];
+  save();
+});
 document.getElementById("btnKakao").onclick=()=>{
   const c=curClass(); if(!c){ toast("교실을 먼저 선택하세요"); return; }
   const raw=document.getElementById("kakaoInput").value;
@@ -636,17 +723,34 @@ document.getElementById("btnKakao").onclick=()=>{
     const dt=parseKakaoDate(line);
     const stripped=line.replace(/\[[^\]]*\]/g,"").trim();
     if(dt && !/\d{3,6}\s+\S/.test(stripped)){ return; } // 날짜만 있는 줄은 무시
+    // 학번 없이 날짜·안내 성격인 줄 (예: "6/1(월)", "변경합니다" 등) 조용히 무시
+    if(!stripped || !/\d{3,6}/.test(stripped)){ return; }
     const tokens=stripped.split(/[\s\t]+/).filter(Boolean);
-    if(tokens.length<3 || !/^\d{3,6}$/.test(tokens[0])){ fails.push({line:orig.trim(), why:"형식 인식 불가"}); return; }
-    const id=tokens[0], name=tokens[1];
-    const status=resolveStatus(tokens.slice(2).join(""));
+    if(tokens.length<2 || !/^\d{3,6}$/.test(tokens[0])){ fails.push({line:orig.trim(), why:"형식 인식 불가"}); return; }
+    const msgId=tokens[0];
+    // 이름 없이 "학번 출결상황" 형식 vs "학번 이름 출결상황" 형식 판별
+    let name=null, statusRaw=null;
+    if(tokens.length===2){
+      // 토큰이 2개: 학번 + 출결상황 (이름 생략)
+      statusRaw=tokens[1];
+    } else {
+      // 토큰이 3개 이상: 학번 + 이름 + 출결상황
+      name=tokens[1];
+      statusRaw=tokens.slice(2).join("");
+      // 이름 자리가 출결상황처럼 보이면 이름 없는 형식으로 재시도
+      if(!resolveStatus(statusRaw) && resolveStatus(tokens.slice(1).join(""))){
+        name=null; statusRaw=tokens.slice(1).join("");
+      }
+    }
+    const status=resolveStatus(statusRaw);
     if(!status){ fails.push({line:orig.trim(), why:"출결 상황 인식 불가"}); return; }
-    const stu=c.students.find(s=>s.id===id);
-    if(!stu){ fails.push({line:orig.trim(), why:"명단에 없는 학번("+id+")"}); return; }
+    const stu=findStudent(c.students, msgId);
+    if(!stu){ fails.push({line:orig.trim(), why:"명단에 없는 학번("+msgId+")"}); return; }
     const entry={status};
     if(needsProof(status)) entry.proof="미제출";
-    rec[id]=entry; applied++;
-    ok.push({id, name:stu.name, status, mismatch:(name && name!==stu.name)});
+    // 반드시 명단의 학번(stu.id)으로 저장 (메시지 학번과 형식이 달라도 정상 반영)
+    rec[stu.id]=entry; applied++;
+    ok.push({id:stu.id, name:stu.name, status, mismatch:(name && name!==stu.name)});
   });
   if(applied>0){ save(); renderAttendance(); }
   const box=document.getElementById("kakaoResult");
@@ -691,18 +795,20 @@ document.getElementById("btnApplyRoster").onclick=()=>{
   for(let i=0;i<36&&idx<unseated.length;i++){ if(!seats[i]) seats[i]=unseated[idx++].id; }
   c.seats=seats; save(); renderSettings(); toast(ns.length+"명 적용됨");
 };
-document.getElementById("btnAutoSeat").onclick=()=>{
+function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+document.getElementById("btnRandomSeat").onclick=()=>{
   const c=curClass();
-  const sorted=[...c.students].sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
-  const seats=blankSeats(); sorted.slice(0,36).forEach((s,i)=>seats[i]=s.id);
-  c.seats=seats; save(); renderSetGrid(); toast("자동 배치 완료");
+  const seats=blankSeats();
+  shuffle([...c.students]).slice(0,36).forEach((s,i)=>seats[i]=s.id);
+  c.seats=seats; save(); renderSetGrid(); toast("랜덤 배치 완료");
 };
 function renderSetGrid(){
   const c=curClass();
   const grid=document.getElementById("setGrid"); grid.innerHTML="";
   for(let i=0;i<36;i++){
-    const id=c.seats[i];
-    const cell=document.createElement("div"); cell.className="seat"; cell.dataset.idx=i;
+    const si=seatIdx(i);
+    const id=c.seats[si];
+    const cell=document.createElement("div"); cell.className="seat"; cell.dataset.idx=si;
     const st=id?studentById(id):null;
     if(st){
       const nm=document.createElement("div"); nm.className="nm"; nm.textContent=st.name; cell.appendChild(nm);
@@ -753,6 +859,9 @@ function cleanupDrag(){
   if(lastOver){ lastOver.classList.remove("dragover"); lastOver=null; }
 }
 
+/* ===== 통계 교실 선택 ===== */
+function statClass(){ return curClass(); }
+
 /* ===== 통계 ===== */
 document.getElementById("statDate").value=todayStr();
 function showStat(which){
@@ -784,7 +893,7 @@ function renderStatProg(){
   box.innerHTML=html;
 }
 function renderStatDay(){
-  const c=curClass();
+  const c=statClass();
   const date=document.getElementById("statDate").value||todayStr();
   const rec=(data.records[c.id]||{})[date]||{};
   const box=document.getElementById("statDayResult");
@@ -796,25 +905,27 @@ function renderStatDay(){
   box.innerHTML=html;
 }
 document.getElementById("btnRange").onclick=()=>{
-  const c=curClass();
+  const c=statClass();
   let f=document.getElementById("statFrom").value, t=document.getElementById("statTo").value;
   const box=document.getElementById("statRangeResult");
   if(!f||!t){ toast("기간을 선택하세요"); return; }
   if(f>t){ const x=f; f=t; t=x; }
   const recs=data.records[c.id]||{};
-  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofile:0});
-  Object.keys(recs).forEach(date=>{ if(date<f||date>t) return; const rec=recs[date];
-    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++; if(rec[id].proof==="미제출") tally[id].nofile++; }); });
+  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofileDates:[]});
+  Object.keys(recs).sort().forEach(date=>{ if(date<f||date>t) return; const rec=recs[date];
+    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++; if(rec[id].proof==="미제출") tally[id].nofileDates.push(date); }); });
   const rows=c.students.filter(s=>{const x=tally[s.id]; return x.absent||x.late||x.early||x.result||x.none;})
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(rows.length===0){ box.innerHTML='<div class="empty-msg">해당 기간에 출석 외 기록이 없습니다.</div>'; return; }
+  function fmtMD(d){ const p=d.split("-"); return parseInt(p[1])+"/"+parseInt(p[2]); }
   let html=`<p class="hint" style="margin-top:12px;">${f} ~ ${t}</p>`;
-  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙<br>미제출</th></tr>';
+  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th></tr>';
   let sums={absent:0,late:0,early:0,result:0,none:0,nofile:0};
   rows.forEach(s=>{ const x=tally[s.id];
-    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofile;
-    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td>${x.nofile||""}</td></tr>`; });
-  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile}</td></tr></table>`;
+    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileDates.length;
+    const nofileTxt=x.nofileDates.length?x.nofileDates.map(fmtMD).join(", "):"";
+    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;font-size:11px;">${nofileTxt}</td></tr>`; });
+  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile||""}</td></tr></table>`;
   box.innerHTML=html;
 };
 
@@ -901,8 +1012,10 @@ function initSyncUI(){
 }
 
 /* ===== 초기화 ===== */
-document.getElementById("statFrom").value=todayStr();
-document.getElementById("statTo").value=todayStr();
+function monthStart(){ const d=new Date(),z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-01"; }
+function monthEnd(){ const d=new Date(),z=n=>String(n).padStart(2,"0"),last=new Date(d.getFullYear(),d.getMonth()+1,0); return last.getFullYear()+"-"+z(last.getMonth()+1)+"-"+z(last.getDate()); }
+document.getElementById("statFrom").value=monthStart();
+document.getElementById("statTo").value=monthEnd();
 localStorage.setItem(KEY, JSON.stringify(data));
 fillClassSelects();
 renderAttendance();
