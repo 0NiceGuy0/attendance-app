@@ -927,16 +927,20 @@ document.getElementById("btnRange").onclick=()=>{
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(rows.length===0){ box.innerHTML='<div class="empty-msg">해당 기간에 출석 외 기록이 없습니다.</div>'; return; }
   function fmtMD(d){ const p=d.split("-"); return parseInt(p[1])+"/"+parseInt(p[2]); }
+  // 긴 출결 상황명 축약
+  function abbr(st){
+    return st.replace("출석인정","인정").replace("(체험학습)","(체험)").replace("(생결)","(생결)").replace("(면접)","(면접)");
+  }
   let html=`<p class="hint" style="margin-top:12px;">${f} ~ ${t}</p>`;
-  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th></tr>';
+  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th><th></th></tr>';
   let sums={absent:0,late:0,early:0,result:0,none:0,nofile:0};
   rows.forEach(s=>{ const x=tally[s.id];
     sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileItems.length;
-    const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${e.status})`).join(", ");
-    const copyBtn=x.nofileItems.length?`<button class="btn gray sm nofile-copy-btn" style="font-size:10px;padding:2px 8px;white-space:nowrap;flex-shrink:0;" data-name="${esc(s.name)}" data-nofile="${esc(nofileTxt)}">📋</button>`:"";
-    const nofileCell=x.nofileItems.length?`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:11px;">${nofileTxt}</span>${copyBtn}</div>`:"";
-    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;">${nofileCell}</td></tr>`; });
-  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile||""}</td></tr></table>`;
+    const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${abbr(e.status)})`).join("\n");
+    const nofileDisp=x.nofileItems.map(e=>`<span style="display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:5px;padding:1px 5px;margin:1px 2px;font-size:11px;white-space:nowrap;">${fmtMD(e.date)}<span style="color:#92400e;">(${abbr(e.status)})</span></span>`).join("");
+    const copyBtn=x.nofileItems.length?`<button class="btn sec sm nofile-copy-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-name="${esc(s.name)}" data-nofile="${esc(nofileTxt)}">📋</button>`:"";
+    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;min-width:80px;">${nofileDisp}</td><td style="white-space:nowrap;">${copyBtn}</td></tr>`; });
+  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile||""}</td><td></td></tr></table>`;
   box.innerHTML=html;
   // 개인별 복사 버튼 이벤트
   box.querySelectorAll(".nofile-copy-btn").forEach(btn=>{
