@@ -904,12 +904,18 @@ function renderStatDay(){
   html+='</table><div style="text-align:center;"><span class="total-badge">출석 외 총 '+list.length+'명</span></div>';
   box.innerHTML=html;
 }
+// 성 제외 이름만 추출 (첫 글자 = 성)
+function givenName(name){
+  if(!name||name.length<=1) return name;
+  return name.slice(1);
+}
 // 이름 끝 글자 받침 여부에 따라 "아"/"야" 반환
 function nameCall(name){
-  if(!name) return name;
-  const code=name.charCodeAt(name.length-1);
-  if(code<0xAC00||code>0xD7A3) return name;
-  return name+((code-0xAC00)%28===0?"야":"아");
+  const gn=givenName(name);
+  if(!gn) return gn;
+  const code=gn.charCodeAt(gn.length-1);
+  if(code<0xAC00||code>0xD7A3) return gn;
+  return gn+((code-0xAC00)%28===0?"야":"아");
 }
 
 document.getElementById("btnRange").onclick=()=>{
@@ -936,7 +942,7 @@ document.getElementById("btnRange").onclick=()=>{
   let sums={absent:0,late:0,early:0,result:0,none:0,nofile:0};
   rows.forEach(s=>{ const x=tally[s.id];
     sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileItems.length;
-    const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${abbr(e.status)})`).join("\n");
+    const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${abbr(e.status)})`).join(", ");
     const nofileDisp=x.nofileItems.map(e=>`<span style="display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:5px;padding:1px 5px;margin:1px 2px;font-size:11px;white-space:nowrap;">${fmtMD(e.date)}<span style="color:#92400e;">(${abbr(e.status)})</span></span>`).join("");
     const copyBtn=x.nofileItems.length?`<button class="btn sec sm nofile-copy-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-name="${esc(s.name)}" data-nofile="${esc(nofileTxt)}">📋</button>`:"";
     html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;min-width:80px;">${nofileDisp}</td><td style="white-space:nowrap;">${copyBtn}</td></tr>`; });
