@@ -904,6 +904,14 @@ function renderStatDay(){
   html+='</table><div style="text-align:center;"><span class="total-badge">출석 외 총 '+list.length+'명</span></div>';
   box.innerHTML=html;
 }
+// 이름 끝 글자 받침 여부에 따라 "아"/"야" 반환
+function nameCall(name){
+  if(!name) return name;
+  const code=name.charCodeAt(name.length-1);
+  if(code<0xAC00||code>0xD7A3) return name;
+  return name+((code-0xAC00)%28===0?"야":"아");
+}
+
 document.getElementById("btnRange").onclick=()=>{
   const c=statClass();
   let f=document.getElementById("statFrom").value, t=document.getElementById("statTo").value;
@@ -911,9 +919,10 @@ document.getElementById("btnRange").onclick=()=>{
   if(!f||!t){ toast("기간을 선택하세요"); return; }
   if(f>t){ const x=f; f=t; t=x; }
   const recs=data.records[c.id]||{};
-  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofileDates:[]});
+  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofileItems:[]});
   Object.keys(recs).sort().forEach(date=>{ if(date<f||date>t) return; const rec=recs[date];
-    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++; if(rec[id].proof==="미제출") tally[id].nofileDates.push(date); }); });
+    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++;
+      if(rec[id].proof==="미제출") tally[id].nofileItems.push({date, status:rec[id].status}); }); });
   const rows=c.students.filter(s=>{const x=tally[s.id]; return x.absent||x.late||x.early||x.result||x.none;})
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(rows.length===0){ box.innerHTML='<div class="empty-msg">해당 기간에 출석 외 기록이 없습니다.</div>'; return; }
@@ -922,11 +931,21 @@ document.getElementById("btnRange").onclick=()=>{
   html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th></tr>';
   let sums={absent:0,late:0,early:0,result:0,none:0,nofile:0};
   rows.forEach(s=>{ const x=tally[s.id];
-    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileDates.length;
-    const nofileTxt=x.nofileDates.length?x.nofileDates.map(fmtMD).join(", "):"";
-    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;font-size:11px;">${nofileTxt}</td></tr>`; });
+    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileItems.length;
+    const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${e.status})`).join(", ");
+    const copyBtn=x.nofileItems.length?`<br><button class="btn gray sm nofile-copy-btn" style="font-size:10px;padding:2px 8px;margin-top:4px;" data-name="${esc(s.name)}" data-nofile="${esc(nofileTxt)}">📋 복사</button>`:"";
+    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;font-size:11px;">${nofileTxt}${copyBtn}</td></tr>`; });
   html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile||""}</td></tr></table>`;
   box.innerHTML=html;
+  // 개인별 복사 버튼 이벤트
+  box.querySelectorAll(".nofile-copy-btn").forEach(btn=>{
+    btn.onclick=async()=>{
+      const msg=nameCall(btn.dataset.name)+" "+btn.dataset.nofile+" 증빙서류 제출하기 바란다.";
+      try{ await navigator.clipboard.writeText(msg); }
+      catch(e){ const ta=document.createElement("textarea"); ta.value=msg; ta.style.cssText="position:fixed;opacity:0;"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy");}catch(e2){} document.body.removeChild(ta); }
+      toast("복사되었습니다");
+    };
+  });
 };
 
 function esc(s){ return String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch])); }
