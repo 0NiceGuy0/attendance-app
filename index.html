@@ -44,6 +44,14 @@
     display:flex; align-items:center; justify-content:center; padding:0; flex:0 0 auto;
   }
   header .navday:active{background:rgba(255,255,255,.35);}
+  .datenav{display:flex; gap:8px; align-items:center;}
+  .datenav input[type=date]{flex:1;}
+  .navday2{
+    border:1px solid var(--line); background:#fff; color:var(--blue); border-radius:9px;
+    width:42px; height:42px; font-size:24px; line-height:1; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; flex:0 0 auto;
+  }
+  .navday2:active{background:var(--bg);}
   .spacer{flex:1;}
   main{padding:12px; max-width:760px; margin:0 auto;}
   .screen{display:none;}
@@ -247,7 +255,11 @@
     </div>
     <div id="statDay" class="card">
       <label>날짜 선택</label>
-      <input type="date" id="statDate">
+      <div class="datenav">
+        <button class="navday2" id="btnStatPrev" aria-label="전날">‹</button>
+        <input type="date" id="statDate">
+        <button class="navday2" id="btnStatNext" aria-label="다음날">›</button>
+      </div>
       <div id="statDayResult"></div>
     </div>
     <div id="statRange" class="card" style="display:none;">
@@ -894,6 +906,16 @@ document.getElementById("segDay").onclick=()=>showStat("day");
 document.getElementById("segRange").onclick=()=>showStat("range");
 document.getElementById("segProg").onclick=()=>showStat("prog");
 document.getElementById("statDate").addEventListener("change",renderStatDay);
+function shiftStatDay(delta){
+  const z=n=>String(n).padStart(2,"0");
+  const el=document.getElementById("statDate");
+  const base=el.value||todayStr();
+  const d=new Date(base+"T00:00:00"); d.setDate(d.getDate()+delta);
+  el.value=d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());
+  renderStatDay();
+}
+document.getElementById("btnStatPrev").onclick=()=>shiftStatDay(-1);
+document.getElementById("btnStatNext").onclick=()=>shiftStatDay(1);
 
 function renderStatProg(){
   const box=document.getElementById("statProgResult");
