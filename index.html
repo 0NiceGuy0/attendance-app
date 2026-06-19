@@ -38,6 +38,12 @@
   header input[type=date]{
     border:none; border-radius:8px; padding:6px 8px; font-size:14px; color:var(--txt);
   }
+  header .navday{
+    border:none; background:rgba(255,255,255,.18); color:#fff; border-radius:8px;
+    width:32px; height:32px; font-size:22px; line-height:1; font-weight:700; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0; flex:0 0 auto;
+  }
+  header .navday:active{background:rgba(255,255,255,.35);}
   .spacer{flex:1;}
   main{padding:12px; max-width:760px; margin:0 auto;}
   .screen{display:none;}
@@ -140,7 +146,9 @@
   <h1>📋</h1>
   <select id="hdrClass"></select>
   <span class="spacer"></span>
+  <button class="navday" id="btnPrevDay" aria-label="전날">‹</button>
   <input type="date" id="hdrDate">
+  <button class="navday" id="btnNextDay" aria-label="다음날">›</button>
 </header>
 
 <main>
@@ -421,6 +429,14 @@ document.querySelectorAll("nav button").forEach(b=>{
 const hdrDate=document.getElementById("hdrDate");
 hdrDate.value=curDate;
 hdrDate.addEventListener("change",()=>{ curDate=hdrDate.value||todayStr(); renderAttendance(); });
+function shiftDay(delta){
+  const z=n=>String(n).padStart(2,"0");
+  const d=new Date(curDate+"T00:00:00"); d.setDate(d.getDate()+delta);
+  curDate=d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());
+  hdrDate.value=curDate; renderAttendance();
+}
+document.getElementById("btnPrevDay").onclick=()=>shiftDay(-1);
+document.getElementById("btnNextDay").onclick=()=>shiftDay(1);
 
 /* ===== 시점 토글 ===== */
 let viewMode="teacher"; // "teacher" | "student"
