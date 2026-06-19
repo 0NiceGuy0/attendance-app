@@ -25,22 +25,23 @@
     padding-bottom:72px; -webkit-user-select:none; user-select:none;
   }
   header{
-    background:var(--blue); color:#fff; padding:12px 14px;
+    background:var(--blue); color:#fff; padding:12px 10px;
     position:sticky; top:0; z-index:50;
-    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    display:flex; align-items:center; gap:6px; flex-wrap:nowrap;
     padding-top:max(12px,env(safe-area-inset-top));
   }
-  header h1{font-size:17px; margin:0; font-weight:700;}
+  header h1{font-size:17px; margin:0; font-weight:700; flex:0 0 auto;}
   header select#hdrClass{
-    border:none; border-radius:8px; padding:6px 8px; font-size:14px; font-weight:700;
-    color:var(--txt); max-width:42vw;
+    border:none; border-radius:8px; padding:6px 6px; font-size:14px; font-weight:700;
+    color:var(--txt); min-width:0; flex:1 1 auto;
   }
   header input[type=date]{
-    border:none; border-radius:8px; padding:6px 8px; font-size:14px; color:var(--txt);
+    border:none; border-radius:8px; padding:6px 4px; font-size:13px; color:var(--txt);
+    flex:0 1 auto; min-width:0;
   }
   header .navday{
     border:none; background:rgba(255,255,255,.18); color:#fff; border-radius:8px;
-    width:32px; height:32px; font-size:22px; line-height:1; font-weight:700; cursor:pointer;
+    width:30px; height:30px; min-width:30px; font-size:20px; line-height:1; font-weight:700; cursor:pointer;
     display:flex; align-items:center; justify-content:center; padding:0; flex:0 0 auto;
   }
   header .navday:active{background:rgba(255,255,255,.35);}
@@ -135,6 +136,11 @@
   th,td{border:1px solid var(--line); padding:7px 5px; text-align:center;}
   th{background:#f8fafc; font-weight:700; font-size:12px;}
   td.name{text-align:left; font-weight:600;}
+  /* 기간별 집계 표: 칸 너비 고정(글자수에 따라 칸이 변하지 않음) */
+  table.range-tbl{table-layout:fixed;}
+  table.range-tbl th,table.range-tbl td{padding:6px 2px; overflow:hidden;}
+  table.range-tbl td.numc{white-space:nowrap;}
+  table.range-tbl td.numc .fit{display:inline-block;}
   .total-badge{background:var(--blue); color:#fff; padding:5px 12px; border-radius:20px; font-size:14px; font-weight:700; display:inline-block; margin-top:6px;}
   .empty-msg{text-align:center; color:var(--muted); padding:30px 10px; font-size:14px;}
   .seg{display:flex; border:1.5px solid var(--blue); border-radius:10px; overflow:hidden; margin-bottom:12px;}
@@ -957,13 +963,13 @@ function nameCall(name){
 }
 
 // 출석인정 상황의 축약 라벨 (생결→생, 체험학습→체, 면접→면, 그 외 출석인정→인정)
-const INJ_ORDER=["생","체","면","인정"];
+const INJ_ORDER=["생","체","면","인"];
 function injeongLabel(status){
   if(!status||!status.startsWith("출석인정")) return null;
   if(status.includes("(생결)")) return "생";
   if(status.includes("(체험학습)")) return "체";
   if(status.includes("(면접)")) return "면";
-  return "인정";
+  return "인";
 }
 
 document.getElementById("btnRange").onclick=()=>{
@@ -993,14 +999,20 @@ document.getElementById("btnRange").onclick=()=>{
   function abbr(st){
     return st.replace("출석인정","인정").replace("(체험학습)","(체험)").replace("(생결)","(생결)").replace("(면접)","(면접)");
   }
-  // 카테고리 셀 표기: 인정 외 횟수 + "(생n, 체n, ...)"
+  // 카테고리 셀 표기: 인정 외 횟수 + "(생n, 체n, ...)" — 칸 고정·글자 자동 축소를 위해 .fit 래핑
   function fmtCat(sl){
     const parts=INJ_ORDER.filter(k=>sl.inj[k]).map(k=>k+sl.inj[k]);
-    if(parts.length===0) return sl.plain||"";
-    return (sl.plain||0)+'<span style="color:var(--muted);font-weight:400;">('+parts.join(", ")+')</span>';
+    let inner;
+    if(parts.length===0){ if(!sl.plain) return ""; inner=String(sl.plain); }
+    else inner=(sl.plain||0)+'<span style="color:var(--muted);font-weight:400;">('+parts.join(", ")+')</span>';
+    return '<span class="fit">'+inner+'</span>';
   }
   let html=`<p class="hint" style="margin-top:12px;">${f} ~ ${t}</p>`;
-  html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th><th></th></tr>';
+  html+='<table class="range-tbl"><colgroup>'+
+    '<col style="width:13%"><col style="width:12%"><col style="width:10%"><col style="width:10%">'+
+    '<col style="width:10%"><col style="width:10%"><col style="width:8%"><col style="width:20%"><col style="width:7%">'+
+    '</colgroup>';
+  html+='<tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th><th></th></tr>';
   const sumSlot={absent:newSlot(),late:newSlot(),early:newSlot(),result:newSlot()};
   let sumNone=0, sumNofile=0;
   const addSlot=(dst,src)=>{ dst.plain+=src.plain; Object.keys(src.inj).forEach(k=>dst.inj[k]=(dst.inj[k]||0)+src.inj[k]); };
@@ -1010,9 +1022,16 @@ document.getElementById("btnRange").onclick=()=>{
     const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${abbr(e.status)})`).join(", ");
     const nofileDisp=x.nofileItems.map(e=>`<span style="display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:5px;padding:1px 5px;margin:1px 2px;font-size:11px;white-space:nowrap;">${fmtMD(e.date)}<span style="color:#92400e;">(${abbr(e.status)})</span></span>`).join("");
     const copyBtn=x.nofileItems.length?`<button class="btn sec sm nofile-copy-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-name="${esc(s.name)}" data-nofile="${esc(nofileTxt)}">📋</button>`:"";
-    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${fmtCat(x.absent)}</td><td>${fmtCat(x.late)}</td><td>${fmtCat(x.early)}</td><td>${fmtCat(x.result)}</td><td>${x.none||""}</td><td style="text-align:left;min-width:80px;">${nofileDisp}</td><td style="white-space:nowrap;">${copyBtn}</td></tr>`; });
-  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${fmtCat(sumSlot.absent)}</td><td>${fmtCat(sumSlot.late)}</td><td>${fmtCat(sumSlot.early)}</td><td>${fmtCat(sumSlot.result)}</td><td>${sumNone||""}</td><td>${sumNofile||""}</td><td></td></tr></table>`;
+    html+=`<tr><td class="numc">${s.id}</td><td class="name">${esc(s.name)}</td><td class="numc">${fmtCat(x.absent)}</td><td class="numc">${fmtCat(x.late)}</td><td class="numc">${fmtCat(x.early)}</td><td class="numc">${fmtCat(x.result)}</td><td class="numc">${x.none||""}</td><td style="text-align:left;">${nofileDisp}</td><td>${copyBtn}</td></tr>`; });
+  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td class="numc">${fmtCat(sumSlot.absent)}</td><td class="numc">${fmtCat(sumSlot.late)}</td><td class="numc">${fmtCat(sumSlot.early)}</td><td class="numc">${fmtCat(sumSlot.result)}</td><td class="numc">${sumNone||""}</td><td>${sumNofile||""}</td><td></td></tr></table>`;
   box.innerHTML=html;
+  // 칸 너비는 고정, 내용이 길면 글자 크기를 줄여 한 줄에 맞춤
+  box.querySelectorAll("td.numc").forEach(td=>{
+    const fit=td.querySelector(".fit"); if(!fit) return;
+    const avail=td.clientWidth-4;
+    let fs=13; td.style.fontSize=fs+"px";
+    while(fs>7 && fit.offsetWidth>avail){ fs-=0.5; td.style.fontSize=fs+"px"; }
+  });
   // 개인별 복사 버튼 이벤트
   box.querySelectorAll(".nofile-copy-btn").forEach(btn=>{
     btn.onclick=async()=>{
