@@ -956,6 +956,16 @@ function nameCall(name){
   return gn+((code-0xAC00)%28===0?"야":"아");
 }
 
+// 출석인정 상황의 축약 라벨 (생결→생, 체험학습→체, 면접→면, 그 외 출석인정→인정)
+const INJ_ORDER=["생","체","면","인정"];
+function injeongLabel(status){
+  if(!status||!status.startsWith("출석인정")) return null;
+  if(status.includes("(생결)")) return "생";
+  if(status.includes("(체험학습)")) return "체";
+  if(status.includes("(면접)")) return "면";
+  return "인정";
+}
+
 document.getElementById("btnRange").onclick=()=>{
   const c=statClass();
   let f=document.getElementById("statFrom").value, t=document.getElementById("statTo").value;
@@ -963,11 +973,19 @@ document.getElementById("btnRange").onclick=()=>{
   if(!f||!t){ toast("기간을 선택하세요"); return; }
   if(f>t){ const x=f; f=t; t=x; }
   const recs=data.records[c.id]||{};
-  const tally={}; c.students.forEach(s=>tally[s.id]={absent:0,late:0,early:0,result:0,none:0,nofileItems:[]});
+  // 카테고리별 슬롯: {plain: 인정 외 횟수, inj:{생:n,체:n,면:n,인정:n}}
+  const newSlot=()=>({plain:0,inj:{}});
+  const newTally=()=>({absent:newSlot(),late:newSlot(),early:newSlot(),result:newSlot(),none:0,nofileItems:[]});
+  const tally={}; c.students.forEach(s=>tally[s.id]=newTally());
   Object.keys(recs).sort().forEach(date=>{ if(date<f||date>t) return; const rec=recs[date];
-    Object.keys(rec).forEach(id=>{ if(!tally[id]) return; tally[id][categoryOf(rec[id].status)]++;
-      if(rec[id].proof==="미제출") tally[id].nofileItems.push({date, status:rec[id].status}); }); });
-  const rows=c.students.filter(s=>{const x=tally[s.id]; return x.absent||x.late||x.early||x.result||x.none;})
+    Object.keys(rec).forEach(id=>{ if(!tally[id]) return;
+      const status=rec[id].status, cat=categoryOf(status);
+      if(cat==="none"){ tally[id].none++; }
+      else { const lbl=injeongLabel(status); if(lbl){ const inj=tally[id][cat].inj; inj[lbl]=(inj[lbl]||0)+1; } else { tally[id][cat].plain++; } }
+      if(rec[id].proof==="미제출") tally[id].nofileItems.push({date, status}); }); });
+  const slotCount=sl=>sl.plain+Object.keys(sl.inj).reduce((a,k)=>a+sl.inj[k],0);
+  const hasAny=x=>slotCount(x.absent)||slotCount(x.late)||slotCount(x.early)||slotCount(x.result)||x.none;
+  const rows=c.students.filter(s=>hasAny(tally[s.id]))
     .sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(rows.length===0){ box.innerHTML='<div class="empty-msg">해당 기간에 출석 외 기록이 없습니다.</div>'; return; }
   function fmtMD(d){ const p=d.split("-"); return parseInt(p[1])+"/"+parseInt(p[2]); }
@@ -975,16 +993,25 @@ document.getElementById("btnRange").onclick=()=>{
   function abbr(st){
     return st.replace("출석인정","인정").replace("(체험학습)","(체험)").replace("(생결)","(생결)").replace("(면접)","(면접)");
   }
+  // 카테고리 셀 표기: 인정 외 횟수 + "(생n, 체n, ...)"
+  function fmtCat(sl){
+    const parts=INJ_ORDER.filter(k=>sl.inj[k]).map(k=>k+sl.inj[k]);
+    if(parts.length===0) return sl.plain||"";
+    return (sl.plain||0)+'<span style="color:var(--muted);font-weight:400;">('+parts.join(", ")+')</span>';
+  }
   let html=`<p class="hint" style="margin-top:12px;">${f} ~ ${t}</p>`;
   html+='<table><tr><th>학번</th><th>학생명</th><th>결석<br>총계</th><th>지각<br>총계</th><th>조퇴<br>총계</th><th>결과<br>총계</th><th>미입실</th><th>증빙미제출 날짜</th><th></th></tr>';
-  let sums={absent:0,late:0,early:0,result:0,none:0,nofile:0};
+  const sumSlot={absent:newSlot(),late:newSlot(),early:newSlot(),result:newSlot()};
+  let sumNone=0, sumNofile=0;
+  const addSlot=(dst,src)=>{ dst.plain+=src.plain; Object.keys(src.inj).forEach(k=>dst.inj[k]=(dst.inj[k]||0)+src.inj[k]); };
   rows.forEach(s=>{ const x=tally[s.id];
-    sums.absent+=x.absent;sums.late+=x.late;sums.early+=x.early;sums.result+=x.result;sums.none+=x.none;sums.nofile+=x.nofileItems.length;
+    addSlot(sumSlot.absent,x.absent);addSlot(sumSlot.late,x.late);addSlot(sumSlot.early,x.early);addSlot(sumSlot.result,x.result);
+    sumNone+=x.none; sumNofile+=x.nofileItems.length;
     const nofileTxt=x.nofileItems.map(e=>`${fmtMD(e.date)}(${abbr(e.status)})`).join(", ");
     const nofileDisp=x.nofileItems.map(e=>`<span style="display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:5px;padding:1px 5px;margin:1px 2px;font-size:11px;white-space:nowrap;">${fmtMD(e.date)}<span style="color:#92400e;">(${abbr(e.status)})</span></span>`).join("");
     const copyBtn=x.nofileItems.length?`<button class="btn sec sm nofile-copy-btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-name="${esc(s.name)}" data-nofile="${esc(nofileTxt)}">📋</button>`:"";
-    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${x.absent||""}</td><td>${x.late||""}</td><td>${x.early||""}</td><td>${x.result||""}</td><td>${x.none||""}</td><td style="text-align:left;min-width:80px;">${nofileDisp}</td><td style="white-space:nowrap;">${copyBtn}</td></tr>`; });
-  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${sums.absent}</td><td>${sums.late}</td><td>${sums.early}</td><td>${sums.result}</td><td>${sums.none}</td><td>${sums.nofile||""}</td><td></td></tr></table>`;
+    html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${fmtCat(x.absent)}</td><td>${fmtCat(x.late)}</td><td>${fmtCat(x.early)}</td><td>${fmtCat(x.result)}</td><td>${x.none||""}</td><td style="text-align:left;min-width:80px;">${nofileDisp}</td><td style="white-space:nowrap;">${copyBtn}</td></tr>`; });
+  html+=`<tr style="font-weight:700;background:#f8fafc;"><td colspan="2">합계</td><td>${fmtCat(sumSlot.absent)}</td><td>${fmtCat(sumSlot.late)}</td><td>${fmtCat(sumSlot.early)}</td><td>${fmtCat(sumSlot.result)}</td><td>${sumNone||""}</td><td>${sumNofile||""}</td><td></td></tr></table>`;
   box.innerHTML=html;
   // 개인별 복사 버튼 이벤트
   box.querySelectorAll(".nofile-copy-btn").forEach(btn=>{
