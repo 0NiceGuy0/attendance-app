@@ -95,6 +95,7 @@
   .seat.cat-none .st{background:var(--none-b); color:#fff;}
   .seat.dragging{opacity:.35;}
   .seat.dragover{outline:3px solid var(--blue); outline-offset:-2px;}
+  .seat.selected{outline:3px solid var(--blue); outline-offset:-2px; box-shadow:0 4px 12px rgba(37,99,235,.3);}
 
   .btn{background:var(--blue); color:#fff; border:none; border-radius:10px; padding:12px 16px; font-size:15px; font-weight:700; cursor:pointer; width:100%;}
   .btn:active{background:var(--blue-d);}
@@ -227,8 +228,8 @@
         <button class="btn" id="btnApplyRoster" style="margin-top:10px;">명단 적용</button>
       </div>
       <div class="card">
-        <h3>자리 배치 (드래그)</h3>
-        <p class="hint">학생 칸을 길게 눌러 끌어다 놓으면 자리가 서로 바뀝니다.</p>
+        <h3>자리 배치 (탭하여 교체)</h3>
+        <p class="hint">학생 한 명을 탭해 선택한 뒤, 바꿀 자리를 탭하면 두 자리가 서로 바뀝니다. 선택한 자리를 다시 탭하면 취소됩니다.</p>
         <div id="setGrid" class="grid"></div>
         <div class="row" style="margin-top:10px;">
           <button class="btn sec" id="btnRandomSeat">🎲 랜덤 배치</button>
@@ -812,6 +813,7 @@ function renderSettings(){
   fillClassSelects();
   const c=curClass();
   document.getElementById("setRoster").value=c.students.map(s=>s.id+" "+s.name).join("\n");
+  swapSelIdx=null;
   renderSetGrid();
 }
 document.getElementById("btnApplyRoster").onclick=()=>{
@@ -834,7 +836,7 @@ document.getElementById("btnRandomSeat").onclick=()=>{
   const c=curClass();
   const seats=blankSeats();
   shuffle([...c.students]).slice(0,36).forEach((s,i)=>seats[i]=s.id);
-  c.seats=seats; save(); renderSetGrid(); toast("랜덤 배치 완료");
+  c.seats=seats; swapSelIdx=null; save(); renderSetGrid(); toast("랜덤 배치 완료");
 };
 function renderSetGrid(){
   const c=curClass();
@@ -848,49 +850,37 @@ function renderSetGrid(){
       const nm=document.createElement("div"); nm.className="nm"; nm.textContent=st.name; cell.appendChild(nm);
       const num=document.createElement("div"); num.className="num"; num.textContent=st.id; cell.appendChild(num);
     } else { cell.classList.add("empty"); cell.textContent="·"; }
-    attachDrag(cell);
+    attachTapSwap(cell);
     grid.appendChild(cell);
+  }
+  // 다시 그릴 때 선택 상태 복원
+  if(swapSelIdx!=null){
+    const sel=grid.querySelector(`.seat[data-idx="${swapSelIdx}"]`);
+    if(sel) sel.classList.add("selected"); else swapSelIdx=null;
   }
 }
 
-/* ===== 드래그 ===== */
-let dragSrc=null, dragClone=null, lastOver=null;
-function attachDrag(cell){
-  cell.addEventListener("pointerdown",e=>{
+/* ===== 탭-탭 자리 바꾸기 ===== */
+// 첫 번째 탭으로 학생을 선택하고, 두 번째 탭한 자리와 서로 바꾼다.
+let swapSelIdx=null;
+function attachTapSwap(cell){
+  cell.addEventListener("click",()=>{
     const c=curClass(); const idx=+cell.dataset.idx;
-    if(!c.seats[idx]) return;
-    e.preventDefault();
-    dragSrc=cell; cell.classList.add("dragging");
-    const rect=cell.getBoundingClientRect();
-    dragClone=cell.cloneNode(true); dragClone.classList.remove("dragging");
-    Object.assign(dragClone.style,{position:"fixed",left:rect.left+"px",top:rect.top+"px",width:rect.width+"px",height:rect.height+"px",pointerEvents:"none",zIndex:300,opacity:"0.9",boxShadow:"0 8px 20px rgba(0,0,0,.25)",transform:"scale(1.05)"});
-    document.body.appendChild(dragClone);
-    cell.setPointerCapture(e.pointerId);
-  });
-  cell.addEventListener("pointermove",e=>{
-    if(!dragSrc) return; e.preventDefault();
-    if(dragClone){ dragClone.style.left=(e.clientX-dragClone.offsetWidth/2)+"px"; dragClone.style.top=(e.clientY-dragClone.offsetHeight/2)+"px"; }
-    const el=document.elementFromPoint(e.clientX,e.clientY);
-    const target=el?el.closest(".seat"):null;
-    if(lastOver&&lastOver!==target) lastOver.classList.remove("dragover");
-    if(target&&target!==dragSrc){ target.classList.add("dragover"); lastOver=target; }
-  });
-  cell.addEventListener("pointerup",e=>{
-    if(!dragSrc) return;
-    const el=document.elementFromPoint(e.clientX,e.clientY);
-    const target=el?el.closest(".seat"):null;
-    if(target&&target!==dragSrc){
-      const c=curClass(); const a=+dragSrc.dataset.idx,b=+target.dataset.idx;
-      const tmp=c.seats[a]; c.seats[a]=c.seats[b]; c.seats[b]=tmp; save();
+    if(swapSelIdx==null){
+      // 첫 번째 선택: 빈 자리는 선택 불가
+      if(!c.seats[idx]){ toast("학생이 있는 자리를 먼저 선택하세요"); return; }
+      swapSelIdx=idx; cell.classList.add("selected");
+      toast("바꿀 자리를 탭하세요");
+    } else if(swapSelIdx===idx){
+      // 같은 자리 다시 탭: 선택 취소
+      swapSelIdx=null; cell.classList.remove("selected");
+    } else {
+      // 두 번째 선택: 자리 교환
+      const a=swapSelIdx, b=idx;
+      const tmp=c.seats[a]; c.seats[a]=c.seats[b]; c.seats[b]=tmp;
+      swapSelIdx=null; save(); renderSetGrid(); toast("자리를 바꿨습니다");
     }
-    cleanupDrag(); renderSetGrid();
   });
-  cell.addEventListener("pointercancel",cleanupDrag);
-}
-function cleanupDrag(){
-  if(dragClone){ dragClone.remove(); dragClone=null; }
-  if(dragSrc){ dragSrc.classList.remove("dragging"); dragSrc=null; }
-  if(lastOver){ lastOver.classList.remove("dragover"); lastOver=null; }
 }
 
 /* ===== 통계 교실 선택 ===== */
