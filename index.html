@@ -303,6 +303,10 @@
       <div class="sec-label">증빙 서류</div>
       <div class="status-grid" id="mProof"></div>
     </div>
+    <div id="mReasonWrap" style="display:none;">
+      <div class="sec-label">결석 사유</div>
+      <div class="status-grid" id="mReasons"></div>
+    </div>
     <div class="row">
       <button class="btn gray" id="mCancel">취소</button>
       <button class="btn" id="mSave">저장</button>
@@ -334,6 +338,15 @@ function categoryOf(s){
 function needsPeriod(s){ return !s.includes("결석"); }
 // 증빙 서류: 미인정 상황을 제외한 모든 출결 상황에 적용(기본값 미제출)
 function needsProof(s){ return !!s && !s.startsWith("미인정"); }
+
+/* ===== 결석(출결) 사유 목록 ===== */
+const REASONS = [
+  "병원 진료","생리 인정","보건실 안정","대입 면접시험 참가","대입 실기시험 참가",
+  "개인체험학습","경조사(조모상)","교내체험학습(내부결재)","코로나 확진(양성 확인서)",
+  "독감 확진(양성 확인서)","독감 검사(음성 확인서)","병입원(입원확인서)","결석신고서(학부모통화)"
+];
+// 사유 선택은 '미입실'과 정상 출석을 제외한 모든 출결 상황에 적용
+function needsReason(s){ return !!s && s!=="미입실"; }
 
 /* ===== 저장소 (v2: 다중 교실) ===== */
 const KEY="att_data_v2";
@@ -568,7 +581,7 @@ document.getElementById("otHour").addEventListener("input",commitOvertime);
 document.getElementById("otMin").addEventListener("input",commitOvertime);
 
 /* ===== 출결 선택 모달 ===== */
-let modalStudent=null, modalStatus=null, modalPeriod=null, modalProof=null;
+let modalStudent=null, modalStatus=null, modalPeriod=null, modalProof=null, modalReason=null;
 const modalBg=document.getElementById("modalBg");
 function openModal(id){
   const st=studentById(id); if(!st) return;
@@ -578,6 +591,7 @@ function openModal(id){
   modalStatus = r? r.status : null;
   modalPeriod = r? (r.period||null) : null;
   modalProof = r? (r.proof||null) : null;
+  modalReason = r? (r.reason||null) : null;
   if(modalStatus && needsProof(modalStatus) && !modalProof) modalProof="미제출";
   document.getElementById("mTitle").textContent=st.name;
   document.getElementById("mSub").textContent=st.id+" · "+curDate;
@@ -589,7 +603,7 @@ function buildStatusOptions(){
   const pres=document.createElement("div");
   pres.className="opt present"+(modalStatus===null?" sel":"");
   pres.textContent="✓ 출석 (정상)";
-  pres.onclick=()=>{ modalStatus=null; modalPeriod=null; modalProof=null; buildStatusOptions(); };
+  pres.onclick=()=>{ modalStatus=null; modalPeriod=null; modalProof=null; modalReason=null; buildStatusOptions(); };
   wrap.appendChild(pres);
   STATUSES.forEach(s=>{
     const o=document.createElement("div");
@@ -599,12 +613,27 @@ function buildStatusOptions(){
       modalStatus=s;
       if(!needsPeriod(s)) modalPeriod=null;
       if(needsProof(s)){ if(!modalProof) modalProof="미제출"; } else { modalProof=null; }
+      if(!needsReason(s)) modalReason=null;
       buildStatusOptions();
     };
     wrap.appendChild(o);
   });
   updatePeriodUI();
   updateProofUI();
+  updateReasonUI();
+}
+function updateReasonUI(){
+  const show = needsReason(modalStatus);
+  document.getElementById("mReasonWrap").style.display = show?"block":"none";
+  if(!show) return;
+  const rw=document.getElementById("mReasons"); rw.innerHTML="";
+  REASONS.forEach(label=>{
+    const d=document.createElement("div");
+    d.className="opt"+(modalReason===label?" sel":"");
+    d.textContent=label;
+    d.onclick=()=>{ modalReason=(modalReason===label?null:label); updateReasonUI(); };
+    rw.appendChild(d);
+  });
 }
 function updateProofUI(){
   const show = needsProof(modalStatus);
@@ -639,7 +668,7 @@ document.getElementById("mSave").onclick=()=>{
   if(!recs[curDate]) recs[curDate]={};
   const rec=recs[curDate];
   if(modalStatus===null){ delete rec[modalStudent]; }
-  else { rec[modalStudent]={status:modalStatus}; if(modalPeriod) rec[modalStudent].period=modalPeriod; if(modalProof) rec[modalStudent].proof=modalProof; }
+  else { rec[modalStudent]={status:modalStatus}; if(modalPeriod) rec[modalStudent].period=modalPeriod; if(modalProof) rec[modalStudent].proof=modalProof; if(modalReason) rec[modalStudent].reason=modalReason; }
   if(Object.keys(rec).length===0) delete recs[curDate];
   save(); modalBg.classList.remove("show"); renderAttendance(); toast("저장되었습니다");
 };
@@ -933,8 +962,8 @@ function renderStatDay(){
   const box=document.getElementById("statDayResult");
   const list=c.students.filter(s=>rec[s.id]&&rec[s.id].status).sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   if(list.length===0){ box.innerHTML='<div class="empty-msg">해당 날짜에 출석 외 학생이 없습니다.</div>'; return; }
-  let html='<table><tr><th>학번</th><th>학생명</th><th>출결 상황</th><th>교시</th><th>증빙</th></tr>';
-  list.forEach(s=>{ const r=rec[s.id]; html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${esc(r.status)}</td><td>${r.period?r.period+"교시":"-"}</td><td>${r.proof?esc(r.proof):"-"}</td></tr>`; });
+  let html='<table><tr><th>학번</th><th>학생명</th><th>출결 상황</th><th>교시</th><th>증빙</th><th>사유</th></tr>';
+  list.forEach(s=>{ const r=rec[s.id]; html+=`<tr><td>${s.id}</td><td class="name">${esc(s.name)}</td><td>${esc(r.status)}</td><td>${r.period?r.period+"교시":"-"}</td><td>${r.proof?esc(r.proof):"-"}</td><td style="font-size:11px;">${r.reason?esc(r.reason):"-"}</td></tr>`; });
   html+='</table><div style="text-align:center;"><span class="total-badge">출석 외 총 '+list.length+'명</span></div>';
   box.innerHTML=html;
 }
