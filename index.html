@@ -347,6 +347,12 @@ const REASONS = [
 ];
 // 사유 선택은 '미입실'과 정상 출석을 제외한 모든 출결 상황에 적용
 function needsReason(s){ return !!s && s!=="미입실"; }
+// 사유 선택 시 클립보드로 복사할 문구(지정된 사유만)
+const REASON_CLIP = {
+  "병원 진료":"병원 진료로 인한 질병결석으로 학부모와 통화하여 확인함.",
+  "생리 인정":"생리통으로 인한 인정결석으로 학부모와 통화하여 확인함.",
+  "경조사(조모상)":"조모상으로 인한 인정결석으로 학부모와 통화하여 확인함."
+};
 
 /* ===== 저장소 (v2: 다중 교실) ===== */
 const KEY="att_data_v2";
@@ -410,6 +416,17 @@ function todayStr(){ const d=new Date(); const z=n=>String(n).padStart(2,"0"); r
 /* ===== 토스트 ===== */
 let toastT;
 function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),1800); }
+
+/* ===== 클립보드 복사 (공용) ===== */
+async function copyToClipboard(text){
+  try{ await navigator.clipboard.writeText(text); return true; }
+  catch(e){
+    const ta=document.createElement("textarea"); ta.value=text; ta.style.cssText="position:fixed;opacity:0;";
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand("copy"); }catch(e2){}
+    document.body.removeChild(ta); return ok;
+  }
+}
 
 /* ===== 교실 선택 UI ===== */
 function fillClassSelects(){
@@ -631,7 +648,15 @@ function updateReasonUI(){
     const d=document.createElement("div");
     d.className="opt"+(modalReason===label?" sel":"");
     d.textContent=label;
-    d.onclick=()=>{ modalReason=(modalReason===label?null:label); updateReasonUI(); };
+    d.onclick=()=>{
+      const selecting = modalReason!==label;
+      modalReason = selecting ? label : null;
+      updateReasonUI();
+      // 지정된 사유를 새로 선택하면 안내 문구를 클립보드에 복사
+      if(selecting && REASON_CLIP[label]){
+        copyToClipboard(REASON_CLIP[label]).then(ok=>toast(ok?"안내 문구가 복사되었습니다":"복사 실패"));
+      }
+    };
     rw.appendChild(d);
   });
 }
