@@ -153,6 +153,11 @@
   .ot-row{display:flex; gap:8px; align-items:center;}
   .prog-item{padding:8px 2px; border-bottom:1px solid var(--line); font-size:13px; line-height:1.4; word-break:break-word;}
   .prog-item .d{font-weight:700; color:var(--blue); font-size:12px; margin-bottom:2px;}
+  .tt-table{border-collapse:collapse; width:100%; min-width:420px;}
+  .tt-table th,.tt-table td{border:1px solid var(--line); padding:2px; text-align:center;}
+  .tt-table th{background:#f8fafc; font-size:12px; font-weight:700; padding:5px 2px;}
+  .tt-table td{padding:2px;}
+  .tt-table select.tt-cell{border:none; padding:5px 2px; font-size:12px; width:100%; min-width:66px; background:transparent; border-radius:0;}
 </style>
 </head>
 <body>
@@ -217,6 +222,16 @@
         <button class="btn danger sm" id="btnDelClass">삭제</button>
       </div>
       <p class="hint">상단에서 교실을 선택하면 아래 명단·자리배치와 출석부·통계 화면이 그 교실에 맞게 바뀝니다.</p>
+    </div>
+
+    <div class="card">
+      <h3>🗓️ 교사 시간표</h3>
+      <label>학급반(담임) — 시간표에 수업이 없을 때 기본으로 표시</label>
+      <select id="homeroomSel"></select>
+      <p class="hint">각 요일·교시에 들어가는 반을 지정하세요. 앱을 열면 현재 시각의 수업 반이 자동으로 선택되고, 수업이 없으면 학급반이 표시됩니다.</p>
+      <div style="overflow-x:auto; margin-top:8px;">
+        <table id="ttTable" class="tt-table"></table>
+      </div>
     </div>
 
     <div id="setBody">
@@ -364,7 +379,33 @@ function normalizeData(d){
   if(!d.progress) d.progress={};   // {classroomId:{date:text}}
   if(!d.overtime) d.overtime={};   // {date:hours}  (교사 전체, 교실 무관)
   if(!d.kakaoInputs) d.kakaoInputs={};  // {date:text}
+  if(!d.timetable) d.timetable={};  // {요일(1~5):{교시(1~9):classroomId}}
+  // d.homeroomId : 학급반(담임) 교실 id (시간표에 수업이 없을 때 기본)
   return d;
+}
+
+/* ===== 교사 시간표 / 교시 시간 ===== */
+// 각 교시의 시작·종료 시각(자정 기준 분). 일반적인 고교 일과 기준.
+const PERIOD_TIMES=[null,
+  [530,580],[590,640],[650,700],[710,760],      // 1~4교시
+  [820,870],[880,930],[940,990],[1000,1050],[1060,1110]]; // 5~9교시
+// 앱 실행 시 기본으로 보여줄 교실 결정: 현재 시각의 수업 반 → 없으면 학급반
+function defaultClassOnLaunch(){
+  const fallback=()=>(data.homeroomId && data.classrooms.find(c=>c.id===data.homeroomId))
+    ? data.homeroomId : (data.classrooms[0] && data.classrooms[0].id);
+  const now=new Date(), dow=now.getDay(); // 0:일 ~ 6:토
+  if(dow<1||dow>5||!data.timetable) return fallback();
+  const mins=now.getHours()*60+now.getMinutes();
+  for(let p=1;p<=9;p++){
+    const t=PERIOD_TIMES[p]; if(!t) continue;
+    // 수업 시작 10분 전부터 종료까지를 '해당 교시'로 간주
+    if(mins>=t[0]-10 && mins<=t[1]){
+      const cid=(data.timetable[dow]||{})[p];
+      if(cid && data.classrooms.find(c=>c.id===cid)) return cid;
+      break; // 해당 교시에 배정된 반이 없으면 학급반으로
+    }
+  }
+  return fallback();
 }
 
 function blankSeats(){ return Array(36).fill(null); }
@@ -449,7 +490,7 @@ document.getElementById("btnRenameClass").onclick=()=>{
   const c=curClass(); if(!c) return;
   const name=(prompt("교실 이름 변경",c.name)||"").trim();
   if(!name) return;
-  c.name=name; save(); fillClassSelects(); toast("이름이 변경되었습니다");
+  c.name=name; save(); fillClassSelects(); renderTimetable(); toast("이름이 변경되었습니다");
 };
 document.getElementById("btnDelClass").onclick=()=>{
   const c=curClass(); if(!c) return;
@@ -869,7 +910,35 @@ function renderSettings(){
   document.getElementById("setRoster").value=c.students.map(s=>s.id+" "+s.name).join("\n");
   swapSelIdx=null;
   renderSetGrid();
+  renderTimetable();
 }
+
+/* ===== 교사 시간표 렌더 ===== */
+function renderTimetable(){
+  if(!data.timetable) data.timetable={};
+  // 학급반 선택
+  const hs=document.getElementById("homeroomSel");
+  hs.innerHTML=data.classrooms.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  hs.value=(data.homeroomId && data.classrooms.find(c=>c.id===data.homeroomId)) ? data.homeroomId : (data.classrooms[0]&&data.classrooms[0].id);
+  // 시간표 표
+  const dayN=[1,2,3,4,5], dayL=["월","화","수","목","금"];
+  const optHtml=cur=>'<option value="">-</option>'+data.classrooms.map(c=>`<option value="${c.id}"${c.id===cur?" selected":""}>${esc(c.name)}</option>`).join("");
+  let html='<tr><th>교시</th>'+dayL.map(d=>`<th>${d}</th>`).join("")+'</tr>';
+  for(let p=1;p<=9;p++){
+    html+=`<tr><th>${p}</th>`;
+    dayN.forEach(d=>{ const cur=(data.timetable[d]||{})[p]||""; html+=`<td><select class="tt-cell" data-d="${d}" data-p="${p}">${optHtml(cur)}</select></td>`; });
+    html+='</tr>';
+  }
+  const tbl=document.getElementById("ttTable"); tbl.innerHTML=html;
+  tbl.querySelectorAll(".tt-cell").forEach(sel=>{
+    sel.onchange=()=>{ const d=sel.dataset.d, p=sel.dataset.p;
+      if(!data.timetable[d]) data.timetable[d]={};
+      if(sel.value) data.timetable[d][p]=sel.value; else delete data.timetable[d][p];
+      save();
+    };
+  });
+}
+document.getElementById("homeroomSel").addEventListener("change",e=>{ data.homeroomId=e.target.value; save(); });
 document.getElementById("btnApplyRoster").onclick=()=>{
   const c=curClass();
   const lines=document.getElementById("setRoster").value.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
@@ -1174,6 +1243,9 @@ function monthStart(){ const d=new Date(),z=n=>String(n).padStart(2,"0"); return
 function monthEnd(){ const d=new Date(),z=n=>String(n).padStart(2,"0"),last=new Date(d.getFullYear(),d.getMonth()+1,0); return last.getFullYear()+"-"+z(last.getMonth()+1)+"-"+z(last.getDate()); }
 document.getElementById("statFrom").value=monthStart();
 document.getElementById("statTo").value=monthEnd();
+// 실행 시 교사 시간표에 따른 반을 기본으로 선택(수업 없으면 학급반)
+const _defCid=defaultClassOnLaunch();
+if(_defCid && data.classrooms.find(c=>c.id===_defCid)) data.currentId=_defCid;
 localStorage.setItem(KEY, JSON.stringify(data));
 fillClassSelects();
 renderAttendance();
