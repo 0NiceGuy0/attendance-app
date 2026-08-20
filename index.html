@@ -797,33 +797,51 @@ function findStudent(students, id){
   return null;
 }
 
+// 축약·구어 표현 → 정식 출결 상황 별칭
+const STATUS_ALIAS = {
+  "생리결석":"출석인정결석(생결)",
+  "생리인정결석":"출석인정결석(생결)",
+  "생리인정":"출석인정결석(생결)",
+  "생결":"출석인정결석(생결)"
+};
 function resolveStatus(raw){
   let s=(raw||"").replace(/\s/g,"");
   if(!s) return null;
 
   function tryMatch(v){
     if(!v) return null;
+    if(STATUS_ALIAS[v]) return STATUS_ALIAS[v];
     if(STATUSES.indexOf(v)>=0) return v;
     if(v.startsWith("인정")){ const c="출석"+v; if(STATUSES.indexOf(c)>=0) return c; }
+    // 생리 계열: 생리+결석 → 출석인정결석(생결)
+    if(v.startsWith("생리") && v.includes("결석")) return "출석인정결석(생결)";
     return null;
   }
 
-  // 1. 직접 매치
-  let m=tryMatch(s); if(m) return m;
+  // 후보 문자열들을 점진적으로 정제하며 매칭 시도
+  const cands=[];
+  const push=v=>{ if(v && cands.indexOf(v)<0) cands.push(v); };
 
-  // 2. 후행 수식어 제거
-  //    · "으로 변경/수정/정정합니다", "바랍니다", 콜론 이후, 마지막 괄호
+  push(s);
+  // 후행 상용어(변경합니다/입니다 등) 제거
   let t=s
-    .replace(/으로(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/, "")
-    .replace(/(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/, "")
-    .replace(/:.*$/, "")
-    .replace(/\([^)]*\)$/, "");
-  if(t!==s){ m=tryMatch(t); if(m) return m; }
+    .replace(/으로(변경|수정|정정)(합니다|해주세요|바랍니다)?[.]?$/,"")
+    .replace(/(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/,"")
+    .replace(/(입니다|이에요|예요|합니다|했어요|함)[.]?$/,"");
+  push(t);
+  // 콤마·콜론 이후(부가 설명) 제거
+  let t2=t.replace(/[,:].*$/,"");
+  push(t2);
+  // 여는 괄호/숫자(교시 정보)/후행 기호 이후 모두 제거
+  let t3=t2
+    .replace(/\(.*$/,"")
+    .replace(/\d.*$/,"")
+    .replace(/[~\-–—().]+$/,"");
+  push(t3);
+  // 괄호 쌍 내용 제거 버전
+  push(t2.replace(/\([^)]*\)/g,""));
 
-  // 3. 남아있는 괄호 모두 제거
-  let t2=t.replace(/\([^)]*\)/g,"");
-  if(t2!==t){ m=tryMatch(t2); if(m) return m; }
-
+  for(const v of cands){ const m=tryMatch(v); if(m) return m; }
   return null;
 }
 function parseKakaoDate(line){
