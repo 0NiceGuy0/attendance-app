@@ -168,14 +168,14 @@
   .mn-sum b{display:block; font-size:20px; line-height:1.2;}
   .mn-sum span{font-size:11px; color:var(--muted);}
   .mn-sum .c-ab b{color:var(--absent-b);} .mn-sum .c-ex b{color:#b45309;} .mn-sum .c-sn b{color:var(--blue);}
-  .mn-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px;}
-  .mn-cell{border:1.5px solid var(--line); border-radius:10px; padding:7px 3px; text-align:center; cursor:pointer; background:#fff; user-select:none; -webkit-user-select:none; min-height:50px; display:flex; flex-direction:column; justify-content:center;}
-  .mn-cell .nm{font-size:13px; font-weight:700; line-height:1.2;}
-  .mn-cell .tg{font-size:10px; margin-top:2px; font-weight:700;}
-  .mn-cell.st-absent{background:#fde2e2; border-color:var(--absent-b); color:#991b1b;}
-  .mn-cell.st-excused{background:#fef3c7; border-color:#d97706; color:#92400e;}
-  .mn-cell.st-sent{background:#dbeafe; border-color:var(--blue); color:#1d4ed8;}
-  .mn-cell.empty{opacity:.35; cursor:default;}
+  .seat .mtg{font-size:10px; margin-top:3px; line-height:1.1; padding:1px 4px; border-radius:5px; font-weight:700;}
+  .seat.mn-absent{background:var(--absent); border-color:var(--absent-b);}
+  .seat.mn-absent .mtg{background:var(--absent-b); color:#fff;}
+  .seat.mn-excused{background:var(--late); border-color:var(--late-b);}
+  .seat.mn-excused .mtg{background:var(--late-b); color:#fff;}
+  .seat.mn-sent{background:var(--early); border-color:var(--blue);}
+  .seat.mn-sent .mtg{background:var(--blue); color:#fff;}
+  .seat .nophone{font-size:9px; color:var(--absent-b); margin-top:1px; font-weight:700;}
   .send-item{display:flex; align-items:center; gap:6px; padding:9px 2px; border-bottom:1px solid var(--line);}
   .send-item .who{flex:1; min-width:0;}
   .send-item .who b{font-size:14px;}
@@ -254,10 +254,13 @@
         <div class="c-sn"><b id="mnCntSent">0</b><span>발송완료</span></div>
       </div>
       <p class="hint" style="margin-top:10px;">학생을 탭할 때마다 <b>등교 → 미등교 → 사전연락 → 등교</b> 순으로 바뀝니다. 8시 20분에 빈 자리 학생만 탭하세요.</p>
-      <div id="mnGrid" class="mn-grid"></div>
+      <div id="mnGrid" class="grid"></div>
+      <div id="mnUnseated" style="display:none;"></div>
       <div class="row">
-        <button class="btn gray sm" id="btnMnReset">오늘 판정 초기화</button>
+        <button class="btn sec" id="btnMnView" style="white-space:nowrap;">👨‍🏫 교사 시점</button>
+        <button class="btn gray" id="btnMnReset">판정 초기화</button>
       </div>
+      <p class="hint">자리 배치는 <b>설정 → 자리 배치</b>와 동일하게 표시됩니다.</p>
     </div>
 
     <div class="card">
@@ -658,9 +661,10 @@ document.getElementById("btnNextDay").onclick=()=>shiftDay(1);
 let viewMode="teacher"; // "teacher" | "student"
 function updateViewBtns(){
   const label = viewMode==="teacher" ? "👨‍🏫 교사 시점" : "🧑‍🎓 학생 시점";
-  const a=document.getElementById("btnAttView"), b=document.getElementById("btnSetView");
+  const a=document.getElementById("btnAttView"), b=document.getElementById("btnSetView"), m=document.getElementById("btnMnView");
   if(a) a.textContent=label;
   if(b) b.textContent=label;
+  if(m) m.textContent=label;
 }
 function seatIdx(i){ return viewMode==="student" ? 35-i : i; }
 
@@ -1097,6 +1101,7 @@ function renderMorning(){
     nameEl.textContent = c? c.name : "학급반 미지정";
     grid.innerHTML='<p class="hint" style="grid-column:1/-1; margin:0;">설정 화면에서 학급반(담임)을 지정하고 학생 명단을 입력하세요.</p>';
     listBox.innerHTML=""; guard.innerHTML="";
+    const ub=document.getElementById("mnUnseated"); if(ub){ ub.style.display="none"; ub.innerHTML=""; }
     document.getElementById("mnCntAbsent").textContent="0";
     document.getElementById("mnCntExcused").textContent="0";
     document.getElementById("mnCntSent").textContent="0";
@@ -1106,21 +1111,48 @@ function renderMorning(){
   const rec=morningRec(c.id, curDate, false);
   const studs=sortedStudents(c);
 
-  // 명단 그리드
+  // 자리 배치 그리드 — 설정의 자리 배치(c.seats)와 동일하게 표시
   grid.innerHTML="";
-  studs.forEach(st=>{
-    const mk=rec.marks[st.id];
-    const sent=!!rec.sent[st.id];
-    const cell=document.createElement("div");
-    cell.className="mn-cell"+(mk==="absent"?(sent?" st-sent":" st-absent"):(mk==="excused"?" st-excused":""));
+  const byId={}; (c.students||[]).forEach(s=>{ byId[s.id]=s; });
+  const seats = Array.isArray(c.seats) ? c.seats : blankSeats();
+  const seated = new Set();
+  const paintCell=(st)=>{
+    const cell=document.createElement("div"); cell.className="seat";
+    const mk=rec.marks[st.id], sent=!!rec.sent[st.id];
+    if(mk==="absent") cell.classList.add(sent?"mn-sent":"mn-absent");
+    else if(mk==="excused") cell.classList.add("mn-excused");
     const nm=document.createElement("div"); nm.className="nm"; nm.textContent=st.name; cell.appendChild(nm);
-    const tg=document.createElement("div"); tg.className="tg";
-    tg.textContent = mk==="absent" ? (sent?"발송완료":"미등교") : (mk==="excused"?"사전연락":(st.phone?"":"번호없음"));
-    if(!mk && !st.phone) tg.style.color="#ef4444";
-    cell.appendChild(tg);
+    if(mk){
+      const tg=document.createElement("div"); tg.className="mtg";
+      tg.textContent = mk==="absent" ? (sent?"발송완료":"미등교") : "사전연락";
+      cell.appendChild(tg);
+    } else if(!normPhone(st.phone)){
+      const np=document.createElement("div"); np.className="nophone"; np.textContent="번호없음"; cell.appendChild(np);
+    }
     cell.addEventListener("click",()=>cycleMark(c.id, st.id));
-    grid.appendChild(cell);
-  });
+    return cell;
+  };
+  for(let i=0;i<36;i++){
+    const sid=seats[seatIdx(i)];
+    const st=sid?byId[sid]:null;
+    if(!st){
+      const empty=document.createElement("div"); empty.className="seat empty"; empty.textContent="·";
+      grid.appendChild(empty); continue;
+    }
+    seated.add(st.id);
+    grid.appendChild(paintCell(st));
+  }
+  // 자리에 배치되지 않은 학생이 있으면 빠뜨리지 않도록 아래에 따로 표시
+  const unseated=studs.filter(s=>!seated.has(s.id));
+  const exBox=document.getElementById("mnUnseated");
+  if(unseated.length===0){ exBox.style.display="none"; exBox.innerHTML=""; }
+  else{
+    exBox.style.display="";
+    exBox.innerHTML='<div class="sec-label" style="margin-top:12px;">자리 미배치 학생</div>';
+    const g=document.createElement("div"); g.className="grid"; g.style.marginTop="6px";
+    unseated.forEach(st=>g.appendChild(paintCell(st)));
+    exBox.appendChild(g);
+  }
 
   const absentIds=studs.filter(s=>rec.marks[s.id]==="absent").map(s=>s.id);
   const excusedN=studs.filter(s=>rec.marks[s.id]==="excused").length;
@@ -1206,6 +1238,10 @@ function cycleMark(cid, sid){
   else { delete rec.marks[sid]; delete rec.sent[sid]; }
   save(); renderMorning();
 }
+document.getElementById("btnMnView").onclick=()=>{
+  viewMode = viewMode==="teacher" ? "student" : "teacher";
+  updateViewBtns(); renderMorning();
+};
 document.getElementById("btnMnReset").onclick=()=>{
   const c=homeroomClass(); if(!c) return;
   if(!confirm(curDate+" 아침 점검 판정과 발송 기록을 모두 지울까요?")) return;
