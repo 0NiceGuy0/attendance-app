@@ -161,6 +161,34 @@
   .tt-table th{background:#f8fafc; font-size:12px; font-weight:700; padding:5px 2px;}
   .tt-table td{padding:2px;}
   .tt-table select.tt-cell{border:none; padding:5px 4px; font-size:12px; width:auto; min-width:64px; max-width:150px; background:transparent; border-radius:0;}
+  a.btn{display:inline-block; text-decoration:none; text-align:center; box-sizing:border-box; width:auto;}
+  /* ===== 아침 점검(미등교 판정) ===== */
+  .mn-sum{display:flex; gap:6px; margin:10px 0 2px;}
+  .mn-sum div{flex:1; text-align:center; border:1px solid var(--line); border-radius:10px; padding:8px 4px; background:#fff;}
+  .mn-sum b{display:block; font-size:20px; line-height:1.2;}
+  .mn-sum span{font-size:11px; color:var(--muted);}
+  .mn-sum .c-ab b{color:var(--absent-b);} .mn-sum .c-ex b{color:#b45309;} .mn-sum .c-sn b{color:var(--blue);}
+  .mn-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px;}
+  .mn-cell{border:1.5px solid var(--line); border-radius:10px; padding:7px 3px; text-align:center; cursor:pointer; background:#fff; user-select:none; -webkit-user-select:none; min-height:50px; display:flex; flex-direction:column; justify-content:center;}
+  .mn-cell .nm{font-size:13px; font-weight:700; line-height:1.2;}
+  .mn-cell .tg{font-size:10px; margin-top:2px; font-weight:700;}
+  .mn-cell.st-absent{background:#fde2e2; border-color:var(--absent-b); color:#991b1b;}
+  .mn-cell.st-excused{background:#fef3c7; border-color:#d97706; color:#92400e;}
+  .mn-cell.st-sent{background:#dbeafe; border-color:var(--blue); color:#1d4ed8;}
+  .mn-cell.empty{opacity:.35; cursor:default;}
+  .send-item{display:flex; align-items:center; gap:6px; padding:9px 2px; border-bottom:1px solid var(--line);}
+  .send-item .who{flex:1; min-width:0;}
+  .send-item .who b{font-size:14px;}
+  .send-item .who small{display:block; color:var(--muted); font-size:11px;}
+  .send-item .done{color:var(--blue); font-weight:700; font-size:12px; white-space:nowrap;}
+  .mn-wait{background:#fef3c7; border:1px solid #d97706; color:#92400e; border-radius:10px; padding:9px 11px; font-size:12.5px; font-weight:700; margin-top:10px;}
+  .mn-go{background:#dcfce7; border:1px solid #15803d; color:#14532d; border-radius:10px; padding:9px 11px; font-size:12.5px; font-weight:700; margin-top:10px;}
+  .ct-row{display:flex; gap:6px; align-items:center; padding:5px 0; border-bottom:1px solid var(--line);}
+  .ct-row .ct-nm{width:104px; flex:none; font-size:12.5px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ct-row .ct-nm small{display:block; font-weight:400; color:var(--muted); font-size:10px;}
+  .ct-row input{margin:0; flex:1; padding:7px 9px; font-size:13px;}
+  .ct-row input.bad{border-color:var(--absent-b); background:#fff5f5;}
+  .msg-prev{background:#f8fafc; border:1px dashed var(--line); border-radius:10px; padding:10px; font-size:12.5px; line-height:1.55; white-space:pre-wrap; color:#334155; margin-top:8px;}
 </style>
 </head>
 <body>
@@ -215,6 +243,34 @@
     </div>
   </section>
 
+  <!-- ===== 아침 점검 (미등교 판정) ===== -->
+  <section class="screen" id="scMorning">
+    <div class="card">
+      <h3>🌅 아침 점검 · <span id="mnClassName">-</span></h3>
+      <p class="hint" style="margin-top:0;">대상 날짜 <b id="mnDate"></b> · 학급반(담임) 명단 기준입니다. 상단 교실 선택과 무관하게 항상 학급반이 표시됩니다.</p>
+      <div class="mn-sum">
+        <div class="c-ab"><b id="mnCntAbsent">0</b><span>미등교</span></div>
+        <div class="c-ex"><b id="mnCntExcused">0</b><span>사전연락</span></div>
+        <div class="c-sn"><b id="mnCntSent">0</b><span>발송완료</span></div>
+      </div>
+      <p class="hint" style="margin-top:10px;">학생을 탭할 때마다 <b>등교 → 미등교 → 사전연락 → 등교</b> 순으로 바뀝니다. 8시 20분에 빈 자리 학생만 탭하세요.</p>
+      <div id="mnGrid" class="mn-grid"></div>
+      <div class="row">
+        <button class="btn gray sm" id="btnMnReset">오늘 판정 초기화</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>📩 학부모 문자 발송</h3>
+      <div id="mnGuard"></div>
+      <div id="mnSendList"></div>
+      <div class="row">
+        <button class="btn sec" id="btnMnCopyAll">📋 전체 문안 복사</button>
+      </div>
+      <p class="hint">[문자] 버튼을 누르면 문자 앱이 학부모 번호와 문구가 채워진 상태로 열립니다. 문자 앱에서 전송을 누른 뒤 앱으로 돌아와 <b>[발송완료]</b>를 눌러 기록하세요. 발송완료로 기록한 학생은 같은 날 다시 뜨지 않습니다.</p>
+    </div>
+  </section>
+
   <!-- ===== 설정 ===== -->
   <section class="screen" id="scSet">
     <div class="card">
@@ -240,11 +296,36 @@
     <div id="setBody">
       <div class="card">
         <h3>학생 명단 입력 (일괄 붙여넣기)</h3>
-        <label>한 줄에 한 명씩, "학번 학생명" 형식</label>
-        <textarea id="setRoster" placeholder="30801 김민준&#10;30802 이서연&#10;30803 박지후"></textarea>
-        <p class="hint">학번과 이름은 공백 또는 탭으로 구분합니다. 엑셀에서 두 열을 복사해 붙여넣어도 됩니다.</p>
+        <label>한 줄에 한 명씩, "학번 학생명" 형식 (뒤에 보호자 번호를 덧붙여도 됩니다)</label>
+        <textarea id="setRoster" placeholder="30801 김민준&#10;30802 이서연 010-1234-5678&#10;30803 박지후"></textarea>
+        <p class="hint">학번과 이름은 공백 또는 탭으로 구분합니다. 엑셀에서 두 열을 복사해 붙여넣어도 됩니다. 세 번째 칸에 휴대폰 번호를 넣으면 보호자 연락처로 함께 저장되고, 비워 두면 기존에 저장된 번호가 그대로 유지됩니다.</p>
         <button class="btn" id="btnApplyRoster" style="margin-top:10px;">명단 적용</button>
       </div>
+      <div class="card">
+        <h3>📞 보호자 연락처</h3>
+        <label>일괄 붙여넣기 — 한 줄에 "학번 휴대폰번호"</label>
+        <textarea id="setPhones" placeholder="30801 010-1234-5678&#10;30802 01023456789"></textarea>
+        <p class="hint">엑셀에서 학번 열과 번호 열을 복사해 붙여넣어도 됩니다. 명단에 있는 학번만 반영되며, 붙여넣지 않은 학생의 번호는 그대로 유지됩니다.</p>
+        <button class="btn" id="btnApplyPhones" style="margin-top:10px;">번호 일괄 적용</button>
+        <div class="sec-label" style="margin-top:14px;">개별 확인 · 수정</div>
+        <div id="phoneList"></div>
+        <p class="hint">보호자 번호는 이 기기(및 동기화 연결된 내 기기)에만 저장됩니다.</p>
+      </div>
+
+      <div class="card">
+        <h3>📩 미등교 알림 문자 설정</h3>
+        <div class="row" style="margin-top:0;">
+          <div style="flex:1;"><label>학교명</label><input type="text" id="ntSchool" placeholder="비아고"></div>
+          <div style="flex:1;"><label>발송 유예 시각</label><input type="time" id="ntSendAt"></div>
+        </div>
+        <label style="margin-top:10px;">문자 문안</label>
+        <textarea id="ntTemplate" style="min-height:96px;"></textarea>
+        <p class="hint">치환어 — <b>{학교}</b> 학교명 · <b>{학급}</b> 학급반 이름 · <b>{학생명}</b> 미등교 판정된 학생 이름 · <b>{시각}</b> 발송 유예 시각</p>
+        <div class="sec-label" style="margin-top:12px;">미리보기</div>
+        <div class="msg-prev" id="ntPreview"></div>
+        <button class="btn gray sm" id="btnNtReset" style="margin-top:10px;">기본 문안으로 되돌리기</button>
+      </div>
+
       <div class="card">
         <h3>자리 배치 (탭하여 교체)</h3>
         <p class="hint">학생 한 명을 탭해 선택한 뒤, 바꿀 자리를 탭하면 두 자리가 서로 바뀝니다. 선택한 자리를 다시 탭하면 취소됩니다.</p>
@@ -304,6 +385,7 @@
 
 <nav>
   <button data-sc="scAtt" class="active"><span class="ic">📋</span>출석부</button>
+  <button data-sc="scMorning"><span class="ic">🌅</span>아침점검</button>
   <button data-sc="scSet"><span class="ic">⚙️</span>설정</button>
   <button data-sc="scStat"><span class="ic">📊</span>통계</button>
 </nav>
@@ -372,6 +454,27 @@ const REASON_CLIP = {
   "경조사(조모상)":"조모상으로 인한 인정결석으로 학부모와 통화하여 확인함."
 };
 
+/* ===== 미등교 알림 기본값 ===== */
+const DEFAULT_SCHOOL="비아고";
+const DEFAULT_SEND_AT="08:33";
+const DEFAULT_TEMPLATE="안녕하세요. {학교} {학급} 담임입니다.\n{학생명} 학생이 {시각} 현재 등교하지 않아 안내드립니다.\n확인 후 회신 부탁드립니다.";
+
+/* 휴대폰 번호 정규화 — 숫자만 남김. 유효하면 문자열, 아니면 "" */
+function normPhone(v){
+  const d=String(v||"").replace(/[^0-9]/g,"");
+  if(!d) return "";
+  if(/^01\d{8,9}$/.test(d)) return d;          // 010-1234-5678
+  if(/^0\d{8,10}$/.test(d)) return d;          // 일반 유선번호도 허용
+  return "";
+}
+/* 보기 좋게 하이픈 삽입 */
+function fmtPhone(v){
+  const d=normPhone(v); if(!d) return String(v||"");
+  if(/^01\d{9}$/.test(d)) return d.slice(0,3)+"-"+d.slice(3,7)+"-"+d.slice(7);
+  if(/^01\d{8}$/.test(d)) return d.slice(0,3)+"-"+d.slice(3,6)+"-"+d.slice(6);
+  return d;
+}
+
 /* ===== 저장소 (v2: 다중 교실) ===== */
 const KEY="att_data_v2";
 // data = { classrooms:[{id,name,students:[{id,name}],seats:[36]}], currentId, records:{classroomId:{date:{studentId:{status,period}}}} }
@@ -384,6 +487,13 @@ function normalizeData(d){
   if(!d.kakaoInputs) d.kakaoInputs={};  // {date:text}
   if(!d.timetable) d.timetable={};  // {요일(1~5):{교시(1~9):classroomId}}
   // d.homeroomId : 학급반(담임) 교실 id (시간표에 수업이 없을 때 기본)
+  // 아침 점검(미등교 판정): {classroomId:{date:{marks:{studentId:"absent"|"excused"}, sent:{studentId:timestamp}}}}
+  if(!d.morning) d.morning={};
+  // 미등교 알림 문자 설정
+  if(!d.notify) d.notify={};
+  if(typeof d.notify.school!=="string") d.notify.school=DEFAULT_SCHOOL;
+  if(typeof d.notify.sendAt!=="string"||!/^\d{2}:\d{2}$/.test(d.notify.sendAt)) d.notify.sendAt=DEFAULT_SEND_AT;
+  if(typeof d.notify.template!=="string"||!d.notify.template.trim()) d.notify.template=DEFAULT_TEMPLATE;
   return d;
 }
 
@@ -522,6 +632,7 @@ document.querySelectorAll("nav button").forEach(b=>{
     document.getElementById(b.dataset.sc).classList.add("active");
     if(b.dataset.sc==="scSet") renderSettings();
     if(b.dataset.sc==="scAtt") renderAttendance();
+    if(b.dataset.sc==="scMorning") renderMorning();
     if(b.dataset.sc==="scStat") renderStatDay();
   });
 });
@@ -529,12 +640,16 @@ document.querySelectorAll("nav button").forEach(b=>{
 /* ===== 헤더 날짜 ===== */
 const hdrDate=document.getElementById("hdrDate");
 hdrDate.value=curDate;
-hdrDate.addEventListener("change",()=>{ curDate=hdrDate.value||todayStr(); renderAttendance(); });
+function afterDateChange(){
+  const el=document.querySelector(".screen.active");
+  if(el && el.id==="scMorning") renderMorning(); else renderAttendance();
+}
+hdrDate.addEventListener("change",()=>{ curDate=hdrDate.value||todayStr(); afterDateChange(); });
 function shiftDay(delta){
   const z=n=>String(n).padStart(2,"0");
   const d=new Date(curDate+"T00:00:00"); d.setDate(d.getDate()+delta);
   curDate=d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate());
-  hdrDate.value=curDate; renderAttendance();
+  hdrDate.value=curDate; afterDateChange();
 }
 document.getElementById("btnPrevDay").onclick=()=>shiftDay(-1);
 document.getElementById("btnNextDay").onclick=()=>shiftDay(1);
@@ -937,6 +1052,245 @@ document.getElementById("btnKakao").onclick=()=>{
   else toast("인식할 내용이 없습니다");
 };
 
+/* ===== 아침 점검 (미등교 판정) ===== */
+// 아침 점검은 항상 '학급반(담임)'을 대상으로 한다
+function homeroomClass(){
+  const hc = data.homeroomId && data.classrooms.find(x=>x.id===data.homeroomId);
+  return hc || curClass();
+}
+// data.morning[classId][date] = { marks:{studentId:"absent"|"excused"}, sent:{studentId:ts} }
+function morningRec(cid, date, create){
+  if(!data.morning) data.morning={};
+  if(!data.morning[cid]){ if(!create) return {marks:{},sent:{}}; data.morning[cid]={}; }
+  const m=data.morning[cid];
+  if(!m[date]){ if(!create) return {marks:{},sent:{}}; m[date]={marks:{},sent:{}}; }
+  if(!m[date].marks) m[date].marks={};
+  if(!m[date].sent) m[date].sent={};
+  return m[date];
+}
+function hhmmToMin(t){ const p=String(t||"").split(":"); const h=+p[0], m=+p[1]; return (isFinite(h)&&isFinite(m))? h*60+m : 513; }
+function timeLabel(t){
+  const p=String(t||DEFAULT_SEND_AT).split(":"); const h=+p[0]||0, m=+p[1]||0;
+  return (h<12?"오전 ":"오후 ")+((h%12)||12)+"시"+(m?" "+m+"분":"");
+}
+// 문자 문안 생성 — {학생명}은 미등교 판정된 학생 이름으로 치환
+function buildMsg(student){
+  const n=data.notify||{}, hc=homeroomClass();
+  return String(n.template||DEFAULT_TEMPLATE)
+    .replace(/\{학교\}/g, n.school||DEFAULT_SCHOOL)
+    .replace(/\{학급\}/g, hc?hc.name:"")
+    .replace(/\{학생명\}/g, student?student.name:"○○")
+    .replace(/\{시각\}/g, timeLabel(n.sendAt));
+}
+function sortedStudents(c){
+  return [...(c.students||[])].sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
+}
+
+function renderMorning(){
+  const c=homeroomClass();
+  const nameEl=document.getElementById("mnClassName");
+  document.getElementById("mnDate").textContent=curDate;
+  const grid=document.getElementById("mnGrid");
+  const listBox=document.getElementById("mnSendList");
+  const guard=document.getElementById("mnGuard");
+  if(!c || !c.students || c.students.length===0){
+    nameEl.textContent = c? c.name : "학급반 미지정";
+    grid.innerHTML='<p class="hint" style="grid-column:1/-1; margin:0;">설정 화면에서 학급반(담임)을 지정하고 학생 명단을 입력하세요.</p>';
+    listBox.innerHTML=""; guard.innerHTML="";
+    document.getElementById("mnCntAbsent").textContent="0";
+    document.getElementById("mnCntExcused").textContent="0";
+    document.getElementById("mnCntSent").textContent="0";
+    return;
+  }
+  nameEl.textContent=c.name;
+  const rec=morningRec(c.id, curDate, false);
+  const studs=sortedStudents(c);
+
+  // 명단 그리드
+  grid.innerHTML="";
+  studs.forEach(st=>{
+    const mk=rec.marks[st.id];
+    const sent=!!rec.sent[st.id];
+    const cell=document.createElement("div");
+    cell.className="mn-cell"+(mk==="absent"?(sent?" st-sent":" st-absent"):(mk==="excused"?" st-excused":""));
+    const nm=document.createElement("div"); nm.className="nm"; nm.textContent=st.name; cell.appendChild(nm);
+    const tg=document.createElement("div"); tg.className="tg";
+    tg.textContent = mk==="absent" ? (sent?"발송완료":"미등교") : (mk==="excused"?"사전연락":(st.phone?"":"번호없음"));
+    if(!mk && !st.phone) tg.style.color="#ef4444";
+    cell.appendChild(tg);
+    cell.addEventListener("click",()=>cycleMark(c.id, st.id));
+    grid.appendChild(cell);
+  });
+
+  const absentIds=studs.filter(s=>rec.marks[s.id]==="absent").map(s=>s.id);
+  const excusedN=studs.filter(s=>rec.marks[s.id]==="excused").length;
+  const sentN=absentIds.filter(id=>rec.sent[id]).length;
+  document.getElementById("mnCntAbsent").textContent=absentIds.length;
+  document.getElementById("mnCntExcused").textContent=excusedN;
+  document.getElementById("mnCntSent").textContent=sentN;
+
+  // 발송 유예 안내
+  const sendAt=(data.notify&&data.notify.sendAt)||DEFAULT_SEND_AT;
+  const now=new Date(), nowMin=now.getHours()*60+now.getMinutes();
+  const isToday=(curDate===todayStr());
+  if(absentIds.length===0){
+    guard.innerHTML='<p class="hint" style="margin:0;">미등교로 판정된 학생이 없습니다.</p>';
+  } else if(isToday && nowMin < hhmmToMin(sendAt)){
+    const left=hhmmToMin(sendAt)-nowMin;
+    guard.innerHTML=`<div class="mn-wait">⏳ ${sendAt} 발송 예정 (${left}분 남음) — 그 사이 등교하면 해당 학생을 탭해 해제하세요. 지금 바로 보내도 됩니다.</div>`;
+  } else {
+    guard.innerHTML=`<div class="mn-go">✅ 발송 시각이 지났습니다. 아래에서 한 명씩 문자를 보내세요.</div>`;
+  }
+
+  // 발송 목록
+  listBox.innerHTML="";
+  if(absentIds.length===0) return;
+  studs.filter(s=>rec.marks[s.id]==="absent").forEach(st=>{
+    const sentTs=rec.sent[st.id];
+    const phone=normPhone(st.phone);
+    const row=document.createElement("div"); row.className="send-item";
+    const who=document.createElement("div"); who.className="who";
+    who.innerHTML=`<b>${esc(st.name)}</b><small>${esc(st.id)} · ${phone?esc(fmtPhone(phone)):'<span style="color:#ef4444;">보호자 번호 없음</span>'}</small>`;
+    row.appendChild(who);
+    if(sentTs){
+      const d=new Date(sentTs), z=n=>String(n).padStart(2,"0");
+      const done=document.createElement("div"); done.className="done"; done.textContent="✓ "+z(d.getHours())+":"+z(d.getMinutes());
+      row.appendChild(done);
+      const undo=document.createElement("button"); undo.className="btn gray sm"; undo.style.width="auto"; undo.textContent="취소";
+      undo.onclick=()=>{ const r=morningRec(c.id,curDate,true); delete r.sent[st.id]; save(); renderMorning(); };
+      row.appendChild(undo);
+    } else if(!phone){
+      const fix=document.createElement("button"); fix.className="btn sec sm"; fix.style.width="auto"; fix.textContent="번호 입력";
+      fix.onclick=()=>{ document.querySelector('nav button[data-sc="scSet"]').click(); setTimeout(()=>{ const el=document.querySelector(`#phoneList input[data-sid="${CSS.escape(st.id)}"]`); if(el){ el.scrollIntoView({block:"center"}); el.focus(); } },120); };
+      row.appendChild(fix);
+    } else {
+      const msg=buildMsg(st);
+      const a=document.createElement("a"); a.className="btn sm"; a.textContent="문자";
+      a.href="sms:"+phone+"?body="+encodeURIComponent(msg);
+      row.appendChild(a);
+      const tel=document.createElement("a"); tel.className="btn sec sm"; tel.textContent="전화";
+      tel.href="tel:"+phone;
+      row.appendChild(tel);
+      const ok=document.createElement("button"); ok.className="btn gray sm"; ok.style.width="auto"; ok.textContent="발송완료";
+      ok.onclick=()=>{ const r=morningRec(c.id,curDate,true); r.sent[st.id]=Date.now(); save(); renderMorning(); toast(st.name+" 발송 기록됨"); };
+      row.appendChild(ok);
+    }
+    listBox.appendChild(row);
+  });
+}
+
+/* 안드로이드 자동화(MacroDroid 등)에서 읽어 갈 '오늘 발송 대기열'
+   형식: 한 줄에 "번호|문안" — 이미 발송완료로 기록한 학생과 번호 없는 학생은 제외 */
+function buildSmsQueue(){
+  try{
+    const c=homeroomClass(); if(!c) return "";
+    const today=todayStr();
+    const rec=(data.morning&&data.morning[c.id]&&data.morning[c.id][today])||null;
+    if(!rec||!rec.marks) return "";
+    const out=[];
+    sortedStudents(c).forEach(s=>{
+      if(rec.marks[s.id]!=="absent") return;
+      if(rec.sent&&rec.sent[s.id]) return;
+      const p=normPhone(s.phone); if(!p) return;
+      out.push(p+"|"+buildMsg(s).replace(/\s*\n\s*/g," "));
+    });
+    return out.join("\n");
+  }catch(e){ return ""; }
+}
+
+function cycleMark(cid, sid){
+  const rec=morningRec(cid, curDate, true);
+  const cur=rec.marks[sid];
+  if(!cur) rec.marks[sid]="absent";
+  else if(cur==="absent"){ rec.marks[sid]="excused"; delete rec.sent[sid]; }
+  else { delete rec.marks[sid]; delete rec.sent[sid]; }
+  save(); renderMorning();
+}
+document.getElementById("btnMnReset").onclick=()=>{
+  const c=homeroomClass(); if(!c) return;
+  if(!confirm(curDate+" 아침 점검 판정과 발송 기록을 모두 지울까요?")) return;
+  if(data.morning&&data.morning[c.id]) delete data.morning[c.id][curDate];
+  save(); renderMorning(); toast("초기화되었습니다");
+};
+document.getElementById("btnMnCopyAll").onclick=()=>{
+  const c=homeroomClass(); if(!c) return;
+  const rec=morningRec(c.id, curDate, false);
+  const targets=sortedStudents(c).filter(s=>rec.marks[s.id]==="absent");
+  if(targets.length===0){ toast("미등교 학생이 없습니다"); return; }
+  const txt=targets.map(s=>`[${s.name}${s.phone?" "+fmtPhone(s.phone):""}]\n`+buildMsg(s)).join("\n\n");
+  copyToClipboard(txt).then(ok=>toast(ok?(targets.length+"명 문안 복사됨"):"복사 실패"));
+};
+
+/* ===== 보호자 연락처 ===== */
+function renderPhoneList(){
+  const c=curClass(); const box=document.getElementById("phoneList");
+  if(!box) return;
+  const studs=sortedStudents(c);
+  if(studs.length===0){ box.innerHTML='<p class="hint" style="margin:0;">먼저 학생 명단을 입력하세요.</p>'; return; }
+  box.innerHTML=studs.map(s=>
+    `<div class="ct-row"><div class="ct-nm">${esc(s.name)}<small>${esc(s.id)}</small></div>`+
+    `<input type="tel" inputmode="tel" data-sid="${esc(s.id)}" value="${esc(s.phone?fmtPhone(s.phone):"")}" placeholder="010-0000-0000"></div>`
+  ).join("");
+  box.querySelectorAll("input[data-sid]").forEach(inp=>{
+    inp.addEventListener("change",()=>{
+      const cc=curClass();
+      const st=cc.students.find(x=>String(x.id)===inp.dataset.sid); if(!st) return;
+      const raw=inp.value.trim();
+      if(!raw){ delete st.phone; inp.classList.remove("bad"); save(); return; }
+      const p=normPhone(raw);
+      if(!p){ inp.classList.add("bad"); toast("번호 형식을 확인하세요"); return; }
+      inp.classList.remove("bad"); st.phone=p; inp.value=fmtPhone(p); save();
+    });
+  });
+}
+document.getElementById("btnApplyPhones").onclick=()=>{
+  const c=curClass();
+  const lines=document.getElementById("setPhones").value.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+  let ok=0, bad=[];
+  lines.forEach(l=>{
+    const p=l.split(/[\s\t,]+/).filter(Boolean); if(p.length<2) { bad.push(l); return; }
+    const sid=p[0], phone=normPhone(p[p.length-1]);
+    const st=c.students.find(x=>String(x.id)===sid);
+    if(!st || !phone){ bad.push(l); return; }
+    st.phone=phone; ok++;
+  });
+  save(); renderPhoneList();
+  document.getElementById("setPhones").value="";
+  toast(ok+"명 번호 적용"+(bad.length?" · "+bad.length+"줄 실패":""));
+};
+
+/* ===== 미등교 알림 문자 설정 ===== */
+function renderNotify(){
+  const n=data.notify||{};
+  const s=document.getElementById("ntSchool"), t=document.getElementById("ntSendAt"), p=document.getElementById("ntTemplate");
+  if(!s) return;
+  s.value=n.school||DEFAULT_SCHOOL;
+  t.value=n.sendAt||DEFAULT_SEND_AT;
+  p.value=n.template||DEFAULT_TEMPLATE;
+  updateNtPreview();
+}
+function updateNtPreview(){
+  const el=document.getElementById("ntPreview"); if(!el) return;
+  const c=homeroomClass();
+  const sample=(c&&sortedStudents(c).find(s=>true))||{name:"홍길동"};
+  el.textContent=buildMsg(sample);
+}
+["ntSchool","ntSendAt","ntTemplate"].forEach(id=>{
+  const el=document.getElementById(id);
+  if(!el) return;
+  el.addEventListener("input",()=>{
+    if(!data.notify) data.notify={};
+    if(id==="ntSchool") data.notify.school=el.value;
+    if(id==="ntSendAt") data.notify.sendAt=el.value||DEFAULT_SEND_AT;
+    if(id==="ntTemplate") data.notify.template=el.value;
+    save(); updateNtPreview();
+  });
+});
+document.getElementById("btnNtReset").onclick=()=>{
+  data.notify={school:DEFAULT_SCHOOL, sendAt:DEFAULT_SEND_AT, template:DEFAULT_TEMPLATE};
+  save(); renderNotify(); toast("기본 문안으로 되돌렸습니다");
+};
+
 /* ===== 설정 렌더 ===== */
 function renderSettings(){
   fillClassSelects();
@@ -945,6 +1299,8 @@ function renderSettings(){
   swapSelIdx=null;
   renderSetGrid();
   renderTimetable();
+  renderPhoneList();
+  renderNotify();
 }
 
 /* ===== 교사 시간표 렌더 ===== */
@@ -976,8 +1332,18 @@ document.getElementById("homeroomSel").addEventListener("change",e=>{ data.homer
 document.getElementById("btnApplyRoster").onclick=()=>{
   const c=curClass();
   const lines=document.getElementById("setRoster").value.split(/\r?\n/).map(l=>l.trim()).filter(l=>l);
+  const prevPhone={}; (c.students||[]).forEach(s=>{ if(s.phone) prevPhone[s.id]=s.phone; });
   const ns=[];
-  lines.forEach(l=>{ const p=l.split(/[\s\t]+/); if(p.length<2) return; ns.push({id:p[0],name:p.slice(1).join(" ")}); });
+  lines.forEach(l=>{
+    const p=l.split(/[\s\t]+/); if(p.length<2) return;
+    // 마지막 칸이 전화번호 형태면 보호자 번호로 분리
+    let phone="", parts=p.slice(1);
+    if(parts.length>=2){ const cand=normPhone(parts[parts.length-1]); if(cand){ phone=cand; parts=parts.slice(0,-1); } }
+    const st={id:p[0], name:parts.join(" ")};
+    const keep = phone || prevPhone[p[0]] || "";   // 번호를 적지 않았으면 기존 번호 유지
+    if(keep) st.phone=keep;
+    ns.push(st);
+  });
   if(ns.length===0){ toast("형식을 확인하세요"); return; }
   c.students=ns;
   const valid=new Set(ns.map(s=>s.id));
@@ -1211,6 +1577,7 @@ function refreshActive(){
   const el=document.querySelector(".screen.active"); if(!el) return;
   if(el.id==="scAtt") renderAttendance();
   else if(el.id==="scSet") renderSettings();
+  else if(el.id==="scMorning") renderMorning();
   else if(el.id==="scStat") renderStatDay();
 }
 async function connectFirebase(showToast){
@@ -1249,7 +1616,12 @@ function schedulePush(){ if(!fbDb||applyingRemote) return; clearTimeout(pushTime
 function pushRemoteNow(){
   if(!fbDb||!fbFns||!syncCfg) return;
   const ref=fbFns.doc(fbDb,"attendance",syncCfg.syncCode);
-  fbFns.setDoc(ref,{ json:JSON.stringify(data), updatedAt:data.updatedAt||Date.now() }).catch(()=>{});
+  fbFns.setDoc(ref,{
+    json:JSON.stringify(data),
+    updatedAt:data.updatedAt||Date.now(),
+    smsDate:todayStr(),
+    smsQueue:buildSmsQueue()
+  }).catch(()=>{});
 }
 document.getElementById("btnSyncConnect").onclick=()=>{
   const cfgText=document.getElementById("syncCfg").value.trim();
