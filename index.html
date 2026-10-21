@@ -108,7 +108,7 @@
   .card{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px;}
   .card h3{margin:0 0 8px; font-size:15px;}
   label{font-size:13px; font-weight:600; color:var(--muted); display:block; margin:10px 0 4px;}
-  input[type=text], input[type=number], textarea, select{
+  input[type=text], input[type=number], input[type=month], textarea, select{
     width:100%; border:1px solid var(--line); border-radius:9px; padding:10px;
     font-size:15px; font-family:inherit; background:#fff; color:var(--txt);
   }
@@ -363,6 +363,7 @@
       <button id="segDay" class="active">일자별</button>
       <button id="segRange">기간별</button>
       <button id="segProg">진도현황</button>
+      <button id="segConf">확인서</button>
     </div>
     <div id="statDay" class="card">
       <label>날짜 선택</label>
@@ -384,6 +385,24 @@
     <div id="statProg" class="card" style="display:none;">
       <h3 style="margin:0 0 4px; font-size:15px;">각 반 현재 진도</h3>
       <div id="statProgResult"></div>
+    </div>
+    <div id="statConf" class="card" style="display:none;">
+      <h3 style="margin:0 0 4px; font-size:15px;">📝 담임교사 확인서 (hwpx)</h3>
+      <div class="row" style="margin-top:0;">
+        <div style="flex:1;"><label>학년</label><input type="number" id="cfGrade" min="1" max="6" step="1"></div>
+        <div style="flex:1;"><label>반</label><input type="number" id="cfClass" min="1" step="1"></div>
+        <div style="flex:2;"><label>담임교사명</label><input type="text" id="cfTeacher" placeholder="홍길동"></div>
+      </div>
+      <label>대상 월</label>
+      <input type="month" id="cfMonth">
+      <div class="row" style="margin-top:10px;">
+        <button class="btn sec" id="btnCfApp" style="flex:1;">출석부에서 불러오기</button>
+        <button class="btn sec" id="btnCfXlsx" style="flex:1;">나이스 엑셀 불러오기</button>
+      </div>
+      <input type="file" id="cfFile" accept=".xlsx" style="display:none;">
+      <p class="hint">· 출석부: 학급반(<b id="cfClassName">-</b>)의 질병·출석인정 지각/조퇴/결과를 불러오고, 증빙 미제출 건을 미리 체크합니다.<br>· 나이스 엑셀: '월별 출결 현황' 엑셀에서 필터로 <b>보이는 행만</b> 불러옵니다.</p>
+      <div id="cfList"></div>
+      <button class="btn" id="btnCfMake" style="margin-top:12px;">확인서 hwpx 만들기</button>
     </div>
   </section>
 </main>
@@ -494,6 +513,7 @@ function normalizeData(d){
   // d.homeroomId : 학급반(담임) 교실 id (시간표에 수업이 없을 때 기본)
   // 아침 점검(미등교 판정): {classroomId:{date:{marks:{studentId:"absent"|"excused"}, sent:{studentId:timestamp}}}}
   if(!d.morning) d.morning={};
+  if(!d.confirm) d.confirm={};    // 담임교사 확인서 {grade, cls, teacher}
   // 미등교 알림 문자 설정
   if(!d.notify) d.notify={};
   if(typeof d.notify.school!=="string") d.notify.school=DEFAULT_SCHOOL;
@@ -1500,15 +1520,19 @@ function showStat(which){
   document.getElementById("segDay").classList.toggle("active",which==="day");
   document.getElementById("segRange").classList.toggle("active",which==="range");
   document.getElementById("segProg").classList.toggle("active",which==="prog");
+  document.getElementById("segConf").classList.toggle("active",which==="conf");
   document.getElementById("statDay").style.display=which==="day"?"block":"none";
   document.getElementById("statRange").style.display=which==="range"?"block":"none";
   document.getElementById("statProg").style.display=which==="prog"?"block":"none";
+  document.getElementById("statConf").style.display=which==="conf"?"block":"none";
   if(which==="day") renderStatDay();
   if(which==="prog") renderStatProg();
+  if(which==="conf") renderConfirm();
 }
 document.getElementById("segDay").onclick=()=>showStat("day");
 document.getElementById("segRange").onclick=()=>showStat("range");
 document.getElementById("segProg").onclick=()=>showStat("prog");
+document.getElementById("segConf").onclick=()=>showStat("conf");
 document.getElementById("statDate").addEventListener("change",renderStatDay);
 function shiftStatDay(delta){
   const z=n=>String(n).padStart(2,"0");
@@ -1644,6 +1668,411 @@ document.getElementById("btnRange").onclick=()=>{
     };
   });
 };
+
+/* ===== 담임교사 확인서 (hwpx) — make_confirm.py 이식 ===== */
+const CF_TIME_MAP={
+  "조":"오전 8시 30분","1":"오전 8시 30분","2":"오전 9시 30분",
+  "3":"오전 10시 30분","4":"오전 11시 30분","5":"오후 1시 10분",
+  "6":"오후 2시 30분","7":"오후 3시 30분"
+};
+const CF_TIME_DEFAULT="오후 3시 30분";
+// 출결구분 끝말(지각/조퇴/결과)에 따라 '증상이 심하여 ~' 뒤에 들어갈 문장
+const CF_ACTION_MAP={
+  "지각":"가정에서 상비약을 복용하고 안정을 취한 후 등교하도록 하였습니다.",
+  "조퇴":"조퇴 후 가정에서 상비약을 복용하고 요양하도록 하였습니다.",
+  "결과":"{교시}에 잠시 귀가해 가정에서 상비약을 복용하고 안정을 취한 뒤 다시 등교하도록 하였습니다."
+};
+const CF_HP="http://www.hancom.co.kr/hwpml/2011/paragraph";
+let cfRows=[];      // [{일자,번호,성명,출결구분,결시교시,병명,checked}]
+let cfSource="";    // 목록 출처 안내 문구
+
+function cfDisease(kind){
+  if(kind.startsWith("질병")) return "감기";
+  if(kind.includes("인정")) return "생리통";
+  return "";
+}
+// 시간·교시·조치 계산 (make_confirm.py read_rows와 동일)
+function cfDerive(row){
+  const rec=Object.assign({},row);
+  const period=rec["결시교시"]||"";
+  rec["시간"]=CF_TIME_MAP[period.slice(0,1)]||CF_TIME_DEFAULT;
+  const ps=period.split(",").filter(x=>x);
+  rec["교시"]=ps.length===1?ps[0]:ps.length?ps[0]+"~"+ps[ps.length-1]:"해당 교시";
+  rec["조치"]=(CF_ACTION_MAP[(rec["출결구분"]||"").slice(-2)]||"").replace("{교시}",rec["교시"]);
+  return rec;
+}
+
+let _jszipP=null;
+function loadJSZip(){
+  if(window.JSZip) return Promise.resolve(window.JSZip);
+  if(!_jszipP) _jszipP=new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    s.onload=()=>res(window.JSZip);
+    s.onerror=()=>{ _jszipP=null; s.remove(); rej(new Error("JSZip을 불러오지 못했습니다(인터넷 연결 확인)")); };
+    document.head.appendChild(s);
+  });
+  return _jszipP;
+}
+
+/* --- 화면 --- */
+function cfGuessGradeClass(){
+  const hc=homeroomClass(); if(!hc) return null;
+  const s=hc.students.find(x=>/^\d{5}$/.test(String(x.id)));
+  if(s){ const id=String(s.id); return {grade:+id[0], cls:+id.slice(1,3)}; }
+  const m=String(hc.name||"").match(/(\d)\s*(?:학년|-)\s*(\d{1,2})/);
+  return m? {grade:+m[1], cls:+m[2]} : null;
+}
+function renderConfirm(){
+  const cf=data.confirm||(data.confirm={});
+  if(!cf.grade||!cf.cls){ const g=cfGuessGradeClass(); if(g){ cf.grade=cf.grade||g.grade; cf.cls=cf.cls||g.cls; } }
+  document.getElementById("cfGrade").value=cf.grade||"";
+  document.getElementById("cfClass").value=cf.cls||"";
+  document.getElementById("cfTeacher").value=cf.teacher||"";
+  const mEl=document.getElementById("cfMonth");
+  if(!mEl.value) mEl.value=todayStr().slice(0,7);
+  const hc=homeroomClass();
+  document.getElementById("cfClassName").textContent=hc?hc.name:"-";
+  renderCfList();
+}
+function cfSaveInfo(){
+  const cf=data.confirm||(data.confirm={});
+  cf.grade=parseInt(document.getElementById("cfGrade").value,10)||"";
+  cf.cls=parseInt(document.getElementById("cfClass").value,10)||"";
+  cf.teacher=document.getElementById("cfTeacher").value.trim();
+  save();
+}
+["cfGrade","cfClass","cfTeacher"].forEach(id=>document.getElementById(id).addEventListener("change",cfSaveInfo));
+
+function renderCfList(){
+  const box=document.getElementById("cfList");
+  if(!cfRows.length){
+    box.innerHTML=cfSource?`<div class="empty-msg">${esc(cfSource)} — 대상이 없습니다.</div>`:"";
+    return;
+  }
+  const n=cfRows.filter(r=>r.checked).length;
+  let html=`<p class="hint" style="margin-top:12px;">${esc(cfSource)} · <b>${n}</b>/${cfRows.length}건 선택</p>`;
+  html+='<div style="overflow-x:auto;"><table class="rng2" style="width:100%;"><tr>'
+    +'<th><input type="checkbox" id="cfAll"'+(n===cfRows.length?" checked":"")+'></th>'
+    +'<th>일자</th><th>번호</th><th>성명</th><th>출결구분</th><th>교시</th><th>병명</th></tr>';
+  cfRows.forEach((r,i)=>{
+    const ps=(r["결시교시"]||"").split(",").filter(x=>x);
+    const pTxt=ps.length?ps[0]+(ps.length>1?"~"+ps[ps.length-1]:""):"-";
+    html+=`<tr><td><input type="checkbox" class="cf-chk" data-i="${i}"${r.checked?" checked":""}></td>`
+      +`<td>${esc(r["일자"].replace(/^\d{4}\./,""))}</td><td>${esc(r["번호"])}</td><td class="name">${esc(r["성명"])}</td>`
+      +`<td>${esc(r["출결구분"])}</td><td>${esc(pTxt)}</td>`
+      +`<td><input type="text" class="cf-dis" data-i="${i}" value="${esc(r["병명"])}" style="width:72px;padding:4px 6px;font-size:12px;"></td></tr>`;
+  });
+  html+='</table></div>';
+  box.innerHTML=html;
+  box.querySelectorAll(".cf-chk").forEach(el=>el.onchange=()=>{ cfRows[+el.dataset.i].checked=el.checked; renderCfList(); });
+  box.querySelectorAll(".cf-dis").forEach(el=>el.oninput=()=>{ cfRows[+el.dataset.i]["병명"]=el.value.trim(); });
+  document.getElementById("cfAll").onchange=e=>{ cfRows.forEach(r=>r.checked=e.target.checked); renderCfList(); };
+}
+
+/* --- 출석부 기록에서 대상 추출 --- */
+function cfFromApp(){
+  const hc=homeroomClass(); if(!hc){ toast("학급반을 먼저 지정하세요"); return; }
+  const ym=document.getElementById("cfMonth").value;
+  if(!ym){ toast("대상 월을 선택하세요"); return; }
+  const recs=data.records[hc.id]||{};
+  const DOW="일월화수목금토", rows=[];
+  const numOf=id=>{ const s=String(id); return String(parseInt(/^\d{5}$/.test(s)?s.slice(-2):s,10)||s); };
+  Object.keys(recs).filter(d=>d.slice(0,7)===ym).forEach(date=>{
+    const day=recs[date], p=date.split("-");
+    const label=`${p[0]}.${p[1]}.${p[2]}.(${DOW[new Date(date+"T00:00:00").getDay()]})`;
+    hc.students.forEach(s=>{
+      const r=day[s.id]; if(!r||!r.status) return;
+      const cat=categoryOf(r.status);
+      if(cat==="none"||cat==="absent"||!cfDisease(r.status)) return;
+      rows.push({"일자":label,"번호":numOf(s.id),"성명":s.name,"출결구분":r.status,
+        "결시교시":r.period?r.period+"교시,":"","병명":cfDisease(r.status),
+        checked:r.proof==="미제출", _sort:String(s.id)+"|"+date});
+    });
+  });
+  rows.sort((a,b)=>a._sort.localeCompare(b._sort,"ko",{numeric:true}));
+  cfRows=rows; cfSource=`출석부 ${hc.name} · ${ym}`;
+  renderCfList();
+}
+document.getElementById("btnCfApp").onclick=cfFromApp;
+
+/* --- 나이스 '월별 출결 현황' 엑셀 읽기 (필터로 숨겨진 행 제외) --- */
+async function cfReadXlsx(buf){
+  const JSZip=await loadJSZip();
+  const zip=await JSZip.loadAsync(buf);
+  const parser=new DOMParser();
+  const readXml=async path=>{ const f=zip.file(path); return f? parser.parseFromString(await f.async("string"),"application/xml") : null; };
+  const kids=(el,name)=>Array.from(el.childNodes).filter(n=>n.nodeType===1&&n.localName===name);
+  // 첫 번째(활성) 시트 경로 찾기
+  let sheetPath="xl/worksheets/sheet1.xml";
+  const wb=await readXml("xl/workbook.xml"), rels=await readXml("xl/_rels/workbook.xml.rels");
+  if(wb&&rels){
+    const sheets=Array.from(wb.getElementsByTagNameNS("*","sheet"));
+    const view=wb.getElementsByTagNameNS("*","workbookView")[0];
+    const sh=sheets[(view&&+view.getAttribute("activeTab"))||0]||sheets[0];
+    const rid=sh&&(sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id")||sh.getAttribute("r:id"));
+    const rel=Array.from(rels.getElementsByTagNameNS("*","Relationship")).find(r=>r.getAttribute("Id")===rid);
+    if(rel){ const t=rel.getAttribute("Target"); sheetPath=t.startsWith("/")?t.slice(1):"xl/"+t.replace(/^\.\//,""); }
+  }
+  // 공유 문자열
+  const sst=[], ssx=await readXml("xl/sharedStrings.xml");
+  const siText=si=>Array.from(si.getElementsByTagNameNS("*","t")).filter(t=>t.parentNode.localName!=="rPh").map(t=>t.textContent).join("");
+  if(ssx) Array.from(ssx.getElementsByTagNameNS("*","si")).forEach(si=>sst.push(siText(si)));
+  const ws=await readXml(sheetPath);
+  if(!ws) throw new Error("시트를 찾지 못했습니다");
+  const colIdx=ref=>{ let n=0; for(const ch of ref.replace(/\d+$/,"")) n=n*26+(ch.charCodeAt(0)-64); return n-1; };
+  let header=null; const rows=[];
+  Array.from(ws.getElementsByTagNameNS("*","row")).forEach(rowEl=>{
+    const vals=[];
+    kids(rowEl,"c").forEach((c,k)=>{
+      const ref=c.getAttribute("r"), t=c.getAttribute("t"), v=kids(c,"v")[0];
+      let val="";
+      if(t==="s") val=v?(sst[+v.textContent]||""):"";
+      else if(t==="inlineStr"){ const is=kids(c,"is")[0]; val=is?siText(is):""; }
+      else val=v?v.textContent:"";
+      vals[ref?colIdx(ref):k]=val;
+    });
+    if(!header){ header=vals.map(x=>String(x||"").trim()); return; }
+    const hidden=/^(1|true)$/.test(rowEl.getAttribute("hidden")||"");
+    if(hidden||vals[0]==null||vals[0]==="") return;
+    const rec={}; header.forEach((h,i)=>rec[h]=String(vals[i]==null?"":vals[i]).trim());
+    rows.push(rec);
+  });
+  return rows;
+}
+document.getElementById("btnCfXlsx").onclick=()=>document.getElementById("cfFile").click();
+document.getElementById("cfFile").onchange=async e=>{
+  const f=e.target.files[0]; e.target.value=""; if(!f) return;
+  try{
+    const recs=await cfReadXlsx(await f.arrayBuffer());
+    if(recs.length&&!("출결구분" in recs[0])) throw new Error("'출결구분' 열이 없는 엑셀입니다");
+    cfRows=recs.map(r=>Object.assign(r,{"병명":cfDisease(r["출결구분"]||""),checked:true}));
+    cfSource=`엑셀 ${f.name}`;
+    const m=f.name.match(/(\d)\s*학년\s*(\d{1,2})\s*반/);
+    if(m){ document.getElementById("cfGrade").value=m[1]; document.getElementById("cfClass").value=m[2]; cfSaveInfo(); }
+    renderCfList();
+  }catch(err){ console.error(err); toast("엑셀을 읽지 못했습니다: "+err.message); }
+};
+
+/* --- hwpx 생성 --- */
+function cfFillPage(paras, rec, rewrites){
+  const tText=t=>{ const f=t.firstChild; return f&&f.nodeType===3?f.nodeValue:""; };
+  const setT=(t,v)=>{ const f=t.firstChild; if(f&&f.nodeType===3) f.nodeValue=v; else t.insertBefore(t.ownerDocument.createTextNode(v),f); };
+  paras.forEach(p=>{
+    // 머지 필드 컨트롤 제거
+    ["fieldBegin","fieldEnd"].forEach(tag=>Array.from(p.getElementsByTagNameNS(CF_HP,tag)).forEach(el=>{
+      const ctrl=el.parentNode; if(ctrl&&ctrl.parentNode) ctrl.parentNode.removeChild(ctrl);
+    }));
+    const texts=Array.from(p.getElementsByTagNameNS(CF_HP,"t")).filter(t=>tText(t));
+    rewrites.forEach(([oldA,newA])=>{
+      for(let i=0;i<=texts.length-oldA.length;i++){
+        if(oldA.every((o,k)=>tText(texts[i+k])===o)) newA.forEach((nv,k)=>setT(texts[i+k],nv));
+      }
+    });
+    texts.forEach(t=>{ const v=tText(t); if(v.includes("{{")) setT(t,v.replace(/\{\{(.+?)\}\}/g,(_,k)=>rec[k]!=null?String(rec[k]):"")); });
+    // 글자 수가 바뀌므로 줄 배치 캐시를 지워 한글이 다시 계산하게 한다
+    Array.from(p.getElementsByTagNameNS(CF_HP,"linesegarray")).forEach(ls=>ls.parentNode.removeChild(ls));
+  });
+}
+function cfBuildSection(xml, rows, info){
+  const doc=new DOMParser().parseFromString(xml,"application/xml");
+  if(doc.getElementsByTagName("parsererror").length) throw new Error("양식 XML 오류");
+  const root=doc.documentElement;
+  const template=Array.from(root.childNodes).filter(n=>n.nodeType===1);  // 최상위 hp:p 들 = 확인서 1장
+  while(root.firstChild) root.removeChild(root.firstChild);
+  const rewrites=[
+    [["  3학년  8반  "],[`  ${info.grade}학년  ${info.cls}반  `]],
+    [["담  임 : 공 택 규 (인)"],[`담  임 : ${Array.from(info.teacher).join(" ")} (인)`]],
+    [[" ( 1","일간)   "],[" (1","일간)"]],
+    [["  ","{{일자}}"],["  위 학생은 ","{{일자}}"]],
+    [["{{출결구분}}"," 당일 가정 내 상비약을 복용하고 요양토록 하였습니다. "],["{{조치}}"," "]],
+    [["학부모님과는 ","{{일자}}"," ","{{시간}}","경 연락을 통해 확인하였습니다."],
+     ["학부모님과는 ","당일"," ","{{시간}}","경 연락하여 사실을 확인하였습니다."]],
+    [["  위와 같이 ","{{출결구분}}","하였기에 확인서를 제출합니다. "],
+     ["  위와 같이 ","{{출결구분}}","에 해당함을 확인하여 확인서를 제출합니다."]]
+  ];
+  rows.forEach((rec,i)=>{
+    const page=template.map(p=>p.cloneNode(true));
+    if(i>0){
+      const first=page[0];
+      first.setAttribute("pageBreak","1");
+      // 구역/단 정의(secPr, colPr)는 첫 장에만 둔다
+      Array.from(first.childNodes).filter(n=>n.nodeType===1&&n.localName==="run"&&n.namespaceURI===CF_HP
+        &&Array.from(n.childNodes).some(c=>c.nodeType===1&&c.localName==="secPr"&&c.namespaceURI===CF_HP))
+        .forEach(r=>first.removeChild(r));
+      page.forEach(p=>Array.from(p.getElementsByTagNameNS(CF_HP,"tbl")).forEach(t=>t.setAttribute("id",String(parseInt(t.getAttribute("id"),10)+i))));
+    }
+    cfFillPage(page,rec,rewrites);
+    page.forEach(p=>root.appendChild(p));
+  });
+  const out=new XMLSerializer().serializeToString(doc).replace(/^<\?xml[^>]*\?>\s*/,"");
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+out;
+}
+async function cfBuildHwpx(rows, info){
+  const JSZip=await loadJSZip();
+  const zin=await JSZip.loadAsync(CF_TEMPLATE_B64.replace(/\s+/g,""),{base64:true});
+  const zout=new JSZip();
+  const names=[]; zin.forEach((path,f)=>{ if(!f.dir) names.push(path); });
+  for(const name of names){
+    let content=await zin.file(name).async("uint8array");
+    if(name==="Contents/section0.xml") content=cfBuildSection(new TextDecoder("utf-8").decode(content),rows,info);
+    // mimetype은 압축하지 않고 맨 앞에 둔다(hwpx 규격)
+    zout.file(name,content,{compression:name==="mimetype"?"STORE":"DEFLATE",createFolders:false});
+  }
+  return zout.generateAsync({type:"blob",mimeType:"application/hwp+zip"});
+}
+document.getElementById("btnCfMake").onclick=async()=>{
+  const sel=cfRows.filter(r=>r.checked);
+  if(!sel.length){ toast("확인서를 만들 학생을 선택하세요"); return; }
+  cfSaveInfo();
+  const cf=data.confirm;
+  if(!cf.grade||!cf.cls||!cf.teacher){ toast("학년·반·담임교사명을 입력하세요"); return; }
+  const btn=document.getElementById("btnCfMake"); btn.disabled=true;
+  try{
+    const blob=await cfBuildHwpx(sel.map(cfDerive),{grade:cf.grade,cls:cf.cls,teacher:cf.teacher});
+    const m=(sel[0]["일자"]||"").match(/^\d{4}\.(\d{1,2})\./);
+    const mm=String(m?+m[1]:+document.getElementById("cfMonth").value.slice(5,7)).padStart(2,"0");
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download=`${mm}월 담임교사 확인서.hwpx`;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1500);
+    toast(`확인서 ${sel.length}장을 만들었습니다`);
+  }catch(err){ console.error(err); toast("생성 실패: "+err.message); }
+  finally{ btn.disabled=false; }
+};
+
+// 담임 출결 확인서 머지 양식(hwpx, 미리보기 이미지 제외)을 base64로 담은 것 — make_confirm.py와 동일
+const CF_TEMPLATE_B64=`
+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
+AAAAAA==
+`;
 
 function esc(s){ return String(s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch])); }
 
