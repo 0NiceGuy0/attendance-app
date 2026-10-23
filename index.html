@@ -471,12 +471,30 @@ const REASONS = [
 ];
 // 사유 선택은 '미입실'과 정상 출석을 제외한 모든 출결 상황에 적용
 function needsReason(s){ return !!s && s!=="미입실"; }
-// 사유 선택 시 클립보드로 복사할 문구(지정된 사유만)
+// 사유 선택 시 클립보드로 복사할 문구. {출결}은 선택한 출결 상황(예: 질병결석, 인정지각)으로,
+// {으로}는 앞 글자 받침에 맞춰 '으로/로'로 바뀐다.
 const REASON_CLIP = {
-  "병원 진료":"병원 진료로 인한 질병결석으로 학부모와 통화하여 확인함.",
-  "생리 인정":"생리통으로 인한 인정결석으로 학부모와 통화하여 확인함.",
-  "경조사(조모상)":"조모상으로 인한 인정결석으로 학부모와 통화하여 확인함."
+  "병원 진료":"병원 진료로 인한 {출결}{으로} 학부모와 통화하여 확인함.",
+  "생리 인정":"생리통으로 인한 {출결}{으로} 학부모와 통화하여 확인함.",
+  "보건실 안정":"몸이 좋지 않아 보건실에서 안정을 취한 {출결}{으로} 보건교사를 통해 확인함.",
+  "대입 면접시험 참가":"대학 입시 면접시험 참가로 인한 {출결}{으로} 시험 응시 확인서를 통해 확인함.",
+  "대입 실기시험 참가":"대학 입시 실기시험 참가로 인한 {출결}{으로} 시험 응시 확인서를 통해 확인함.",
+  "개인체험학습":"학교장 허가 교외체험학습으로 인한 {출결}{으로} 체험학습 신청서와 보고서를 통해 확인함.",
+  "경조사(조모상)":"조모상으로 인한 {출결}{으로} 학부모와 통화하여 확인함.",
+  "교내체험학습(내부결재)":"교내 체험학습 참가로 인한 {출결}{으로} 내부결재를 통해 확인함.",
+  "코로나 확진(양성 확인서)":"코로나19 확진으로 인한 {출결}{으로} 양성 확인서를 통해 확인함.",
+  "독감 확진(양성 확인서)":"독감(인플루엔자) 확진으로 인한 {출결}{으로} 양성 확인서를 통해 확인함.",
+  "독감 검사(음성 확인서)":"독감 의심 증상으로 검사를 받은 {출결}{으로} 음성 확인서를 통해 확인함.",
+  "병입원(입원확인서)":"질병으로 병원에 입원하여 발생한 {출결}{으로} 입원확인서를 통해 확인함.",
+  "결석신고서(학부모통화)":"학부모와 통화하여 사유를 확인한 {출결}{으로} 결석신고서를 제출받음."
 };
+// 출결 상황을 문구용으로 다듬음: 출석인정결석(생결) → 인정결석
+function reasonClipText(label, status){
+  const t=REASON_CLIP[label]; if(!t) return "";
+  const st=String(status||"").replace(/\(.*?\)/g,"").replace(/^출석인정/,"인정");
+  const code=st.charCodeAt(st.length-1), jong=(code>=0xAC00&&code<=0xD7A3)?(code-0xAC00)%28:0;
+  return t.replace("{출결}",st).replace("{으로}",(jong===0||jong===8)?"로":"으로");
+}
 
 /* ===== 미등교 알림 기본값 ===== */
 const DEFAULT_SCHOOL="비아고";
@@ -810,6 +828,7 @@ document.getElementById("otMin").addEventListener("input",commitOvertime);
 
 /* ===== 출결 선택 모달 ===== */
 let modalStudent=null, modalStatus=null, modalPeriod=null, modalProof=null, modalReason=null;
+let modalReasonSeen=new Set();  // 이 창에서 한 번이라도 선택됐던 사유(다시 선택할 때만 문구 복사)
 const modalBg=document.getElementById("modalBg");
 function openModal(id){
   const st=studentById(id); if(!st) return;
@@ -820,6 +839,7 @@ function openModal(id){
   modalPeriod = r? (r.period||null) : null;
   modalProof = r? (r.proof||null) : null;
   modalReason = r? (r.reason||null) : null;
+  modalReasonSeen=new Set(modalReason?[modalReason]:[]);
   if(modalStatus && needsProof(modalStatus) && !modalProof) modalProof="미제출";
   document.getElementById("mTitle").textContent=st.name;
   document.getElementById("mSub").textContent=st.id+" · "+curDate;
@@ -863,9 +883,12 @@ function updateReasonUI(){
       const selecting = modalReason!==label;
       modalReason = selecting ? label : null;
       updateReasonUI();
-      // 지정된 사유를 새로 선택하면 안내 문구를 클립보드에 복사
-      if(selecting && REASON_CLIP[label]){
-        copyToClipboard(REASON_CLIP[label]).then(ok=>toast(ok?"안내 문구가 복사되었습니다":"복사 실패"));
+      // 처음 선택할 때는 복사하지 않고, 해제했다가 다시 선택하면 안내 문구를 클립보드에 복사
+      if(selecting){
+        const again=modalReasonSeen.has(label);
+        modalReasonSeen.add(label);
+        const txt=again? reasonClipText(label, modalStatus) : "";
+        if(txt) copyToClipboard(txt).then(ok=>toast(ok?"안내 문구가 복사되었습니다":"복사 실패"));
       }
     };
     rw.appendChild(d);
