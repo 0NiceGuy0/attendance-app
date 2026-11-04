@@ -217,7 +217,7 @@
 
     <div class="card">
       <h3>💬 카카오톡 메시지로 자동 기록</h3>
-      <label>카톡 대화 내용을 복사해 붙여넣으세요 (상단에서 선택한 날짜 <span id="kakaoDate"></span>에 기록됩니다)</label>
+      <label>카톡 대화 내용을 복사해 붙여넣으세요 (상단에서 선택한 날짜 <span id="kakaoDate"></span>에 기록됩니다. 여러 날의 대화를 붙여넣으면 그 날짜 부분만 반영합니다)</label>
       <textarea id="kakaoInput" style="min-height:90px;" placeholder="예)&#10;2026년 5월 28일 목요일&#10;[***] [오전 8:17] 2203 *** 질병결석&#10;[***] [오전 8:32] 2908 *** 질병지각&#10;2919 *** 질병결석"></textarea>
       <p class="hint">보낸 사람·시각([...])과 날짜 줄은 자동 무시하고 학번·이름·출결상황만 인식합니다. 명단에 있는 학번만 기록되며, 못 알아본 줄은 아래에 따로 표시됩니다. "인정결석"처럼 줄여 써도 "출석인정결석"으로 자동 변환됩니다.</p>
       <button class="btn" id="btnKakao" style="margin-top:10px;">붙여넣은 내용 자동 기록</button>
@@ -1004,58 +1004,140 @@ function findStudent(students, id){
   return null;
 }
 
-// 축약·구어 표현 → 정식 출결 상황 별칭
-const STATUS_ALIAS = {
-  "생리결석":"출석인정결석(생결)",
-  "생리인정결석":"출석인정결석(생결)",
-  "생리인정":"출석인정결석(생결)",
-  "생결":"출석인정결석(생결)"
-};
-function resolveStatus(raw){
-  let s=(raw||"").replace(/\s/g,"");
-  if(!s) return null;
-
-  function tryMatch(v){
-    if(!v) return null;
-    if(STATUS_ALIAS[v]) return STATUS_ALIAS[v];
-    if(STATUSES.indexOf(v)>=0) return v;
-    if(v.startsWith("인정")){ const c="출석"+v; if(STATUSES.indexOf(c)>=0) return c; }
-    // 생리 계열: 생리+결석 → 출석인정결석(생결)
-    if(v.startsWith("생리") && v.includes("결석")) return "출석인정결석(생결)";
-    return null;
-  }
-
-  // 후보 문자열들을 점진적으로 정제하며 매칭 시도
-  const cands=[];
-  const push=v=>{ if(v && cands.indexOf(v)<0) cands.push(v); };
-
-  push(s);
-  // 후행 상용어(변경합니다/입니다 등) 제거
-  let t=s
-    .replace(/으로(변경|수정|정정)(합니다|해주세요|바랍니다)?[.]?$/,"")
-    .replace(/(변경|수정|정정)(합니다|해주세요|바랍니다)[.]?$/,"")
-    .replace(/(입니다|이에요|예요|합니다|했어요|함)[.]?$/,"");
-  push(t);
-  // 콤마·콜론 이후(부가 설명) 제거
-  let t2=t.replace(/[,:].*$/,"");
-  push(t2);
-  // 여는 괄호/숫자(교시 정보)/후행 기호 이후 모두 제거
-  let t3=t2
-    .replace(/\(.*$/,"")
-    .replace(/\d.*$/,"")
-    .replace(/[~\-–—().]+$/,"");
-  push(t3);
-  // 괄호 쌍 내용 제거 버전
-  push(t2.replace(/\([^)]*\)/g,""));
-
-  for(const v of cands){ const m=tryMatch(v); if(m) return m; }
+// ── 카톡 메시지 → 출결 인식 ──
+// 한 줄(학번 뒤 부분)에서 출결 상황·교시·사유를 뽑는다.
+// 반환: {status, period, reason} | {error} | null(출결 표현 없음)
+const KK_CAT={"결석":"결석","지각":"지각","조퇴":"조퇴","결과":"결과"};
+function kkPeriod(text, cat){
+  // 교시 숫자만 모은다(조회·0교시 = 0). 시각(8:58, 8시44분)·코로나19 등은 제외
+  let t=text.replace(/코로나\s*19/g,"코로나")
+    .replace(/\d{1,2}\s*[:;]\s*\d{2}\s*분?/g," ")
+    .replace(/\d{1,2}\s*시\s*\d{1,2}\s*분/g," ")
+    .replace(/[A-Za-z]\s*형/g," ")
+    .replace(/조회/g,"0");
+  const nums=(t.match(/\d+/g)||[]).map(Number).filter(n=>n<=9);
+  if(!nums.length) return null;
+  let p;
+  if(cat==="지각") p=nums[nums.length-1];   // ~N교시: 마지막으로 빠진 교시
+  else p=nums.find(n=>n>0);                 // 조퇴 N교시~, 결과 N교시, 미입실 N교시
+  return (p&&p>=1&&p<=9)? p : null;
+}
+function kkReason(t, status){
+  if(!needsReason(status)) return null;
+  if(/생리|생결/.test(t)) return "생리 인정";
+  if(/보건실/.test(t)) return "보건실 안정";
+  if(/입원/.test(t)) return "병입원(입원확인서)";
+  if(/조모상/.test(t)) return "경조사(조모상)";
+  if(/면접/.test(t)) return "대입 면접시험 참가";
+  if(/실기/.test(t)) return "대입 실기시험 참가";
+  if(/코로나/.test(t)) return "코로나 확진(양성 확인서)";
+  if(/독감/.test(t)) return "독감 확진(양성 확인서)";
+  if(/교내체험/.test(t)) return "교내체험학습(내부결재)";
+  if(/체험/.test(t)) return "개인체험학습";
+  if(/병원/.test(t)) return "병원 진료";
   return null;
 }
+function parseStatusText(raw, allowBare){
+  const t=String(raw||"").replace(/\s+/g,"");
+  if(!t) return null;
+  // 미입실·불출석 (수업 미입실)
+  const mi=t.search(/미입실|불출석/);
+  if(mi>=0) return {status:"미입실", period:kkPeriod(t,"미입실"), reason:null};
+  // 결석·지각·조퇴·결과 (가장 먼저 나오는 것)
+  const m=t.match(/결석|지각|조퇴|결과/);
+  let cat, before, after;
+  if(m){ cat=m[0]; before=t.slice(Math.max(0,m.index-6),m.index); after=t.slice(m.index+cat.length); }
+  else if(/생결|생리인정/.test(t)){ cat="결석"; before="생리인정"; after=t; }
+  else if(allowBare && /보건실(요양|안정)/.test(t)){ cat="결과"; before="질병"; after=t; }
+  else return null;
+  let kind;
+  if(/미인정/.test(before)) kind="미인정";
+  else if(/인정|생리|생결/.test(before)) kind="출석인정";
+  else if(/질병|병결|병지|병조/.test(before)) kind="질병";
+  else if(/기타/.test(before)) kind="기타";
+  else if(/보건실/.test(before)) kind="질병";
+  else return {error:"질병·인정·미인정 구분이 없음"};
+  let status=kind+cat;
+  if(status==="출석인정결석"){
+    if(/생리|생결/.test(t)) status="출석인정결석(생결)";
+    else if(/면접/.test(t)) status="출석인정결석(면접)";
+    else if(/체험/.test(t)&&!/교내체험/.test(t)) status="출석인정결석(체험학습)";
+  }
+  if(STATUSES.indexOf(status)<0) return {error:"출결 상황 인식 불가"};
+  return {status, period:needsPeriod(status)?kkPeriod(after,cat):null, reason:kkReason(t,status)};
+}
+// 카톡 날짜 구분선: "2026년 10월 21일 수요일"
 function parseKakaoDate(line){
-  const m=line.match(/(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  const m=line.match(/^(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*[월화수목금토일]요일$/);
   if(!m) return null;
   const z=n=>String(n).padStart(2,"0");
   return m[1]+"-"+z(m[2])+"-"+z(m[3]);
+}
+// 붙여넣은 대화 전체를 해석한다(기록은 하지 않음). date 구간의 줄만 대상으로 한다.
+function parseKakaoText(raw, students, date){
+  const out={items:[], fails:[], arrived:[], otherClass:0, otherDateLines:0, dates:[]};
+  const lines=String(raw||"").split(/\r?\n/);
+  // 첫 날짜 구분선 앞의 줄은 그 이전 날의 대화다. 구분선이 없거나 선택한 날짜가 첫 구분선보다 앞일 때만 반영
+  const firstDt=lines.map(l=>parseKakaoDate(l.trim())).find(Boolean);
+  let section=(!firstDt || date<firstDt)? date : "";
+  let last=null;             // 직전 학번 줄의 학생(명단에 있으면 student, 없으면 false)
+  lines.forEach(orig=>{
+    const line=orig.trim(); if(!line) return;
+    const dt=parseKakaoDate(line);
+    if(dt){ section=dt; last=null; if(out.dates.indexOf(dt)<0) out.dates.push(dt); return; }
+    if(section!==date){ out.otherDateLines++; return; }
+    // [보낸 사람] [오전 8:16] 머리말 제거
+    const body=line.replace(/\[[^\]]*\]/g," ").replace(/\s+/g," ").trim();
+    if(!body) return;
+    // 날짜만 적은 줄(10/29(목), 2026.10.23.(금), 2026년 10월 30일(목) …)은 무시
+    if(/^\d{4}\s*년\s*\d{1,2}\s*월/.test(body) || /^\d{1,4}[./]\d{1,2}([./]\d{1,2})?\.?\s*(\([월화수목금토일]\))?\.?$/.test(body)) return;
+    const im=body.match(/^(\d{3,6})(?=\s|[가-힣]|$)\s*(.*)$/);
+    if(!im){
+      // 학번 없는 줄: 직전 학생의 정정·추가로 본다 (예: "질병지각(병원진료)입니다.")
+      const ps=parseStatusText(body,false);
+      if(!ps||ps.error||last===null) return;
+      if(last===false) return;   // 직전 학생이 다른 반
+      out.items.push({stu:last, ps, line, follow:true});
+      return;
+    }
+    const msgId=im[1];
+    let rest=im[2];
+    // 이름: 학번 바로 뒤 한글 덩어리
+    let name=null;
+    const nm=rest.match(/^([가-힣]+)/);
+    if(nm){
+      const run=nm[1];
+      const known=students.map(s=>s.name).filter(n=>run.startsWith(n)).sort((a,b)=>b.length-a.length)[0];
+      if(known) name=known;
+      else if(!/^(질병|미인정|인정|출석|기타|생리|생결|보건실|결석|지각|조퇴|결과|미입실|불출석|입실)/.test(run)) name=run.length>4? run.slice(0,3) : run;
+      if(name) rest=rest.slice(name.length);
+    }
+    let stu=findStudent(students, msgId), idNote=false;
+    // 학번 오타 대비: 이름이 명단의 학생 한 명과만 일치하고 학번이 같은 반(또는 한 글자 차이)이면 그 학생으로
+    if(name && (!stu || stu.name!==name)){
+      const n5=id=>{ id=String(id); return id.length===4? id[0]+"0"+id.slice(1) : id; };
+      const close=(a,b)=>{ a=n5(a); b=n5(b); if(a.length!==b.length) return false;
+        if(a.slice(0,3)===b.slice(0,3)) return true;
+        let d=0; for(let i=0;i<a.length;i++) if(a[i]!==b[i]) d++; return d<=1; };
+      const byName=students.filter(s=>s.name===name);
+      if(byName.length===1 && close(msgId, byName[0].id)){
+        if(stu) idNote=true;
+        stu=byName[0];
+      }
+    }
+    if(!stu){ last=false; out.otherClass++; return; }
+    last=stu;
+    const compact=rest.replace(/\s+/g,"");
+    // "8시 44분 입실했습니다" → 미입실 해제
+    if(!/미입실/.test(compact) && /입실/.test(compact) && !/결석|지각|조퇴|결과/.test(compact)){
+      out.arrived.push({stu, line}); return;
+    }
+    const ps=parseStatusText(rest,true);
+    if(!ps){ out.fails.push({line, why:"출결 표현 없음(참고 메시지)", stu}); return; }
+    if(ps.error){ out.fails.push({line, why:ps.error, stu}); return; }
+    out.items.push({stu, ps, line, mismatch:!!(name && name!==stu.name), idNote});
+  });
+  return out;
 }
 document.getElementById("kakaoInput").addEventListener("input",e=>{
   if(!data.kakaoInputs) data.kakaoInputs={};
@@ -1066,65 +1148,57 @@ document.getElementById("kakaoInput").addEventListener("input",e=>{
 document.getElementById("btnKakao").onclick=()=>{
   const c=curClass(); if(!c){ toast("교실을 먼저 선택하세요"); return; }
   const raw=document.getElementById("kakaoInput").value;
-  const lines=raw.split(/\r?\n/);
-  const ok=[]; const fails=[];
-  // 기록은 항상 상단에서 선택한 날짜(curDate)에 한다. 메시지 속 날짜 줄은 건너뛴다.
+  // 기록은 상단에서 선택한 날짜(curDate)에 한다. 카톡 날짜 구분선이 있으면 그 날짜 구간만 반영한다.
+  const res=parseKakaoText(raw, c.students, curDate);
   if(!data.records[c.id]) data.records[c.id]={};
   if(!data.records[c.id][curDate]) data.records[c.id][curDate]={};
   const rec=data.records[c.id][curDate];
-  let applied=0;
-  lines.forEach(orig=>{
-    const line=orig.trim(); if(!line) return;
-    const dt=parseKakaoDate(line);
-    const stripped=line.replace(/\[[^\]]*\]/g,"").trim();
-    if(dt && !/\d{3,6}\s+\S/.test(stripped)){ return; } // 날짜만 있는 줄은 무시
-    // 학번 없이 날짜·안내 성격인 줄 (예: "6/1(월)", "변경합니다" 등) 조용히 무시
-    if(!stripped || !/\d{3,6}/.test(stripped)){ return; }
-    const tokens=stripped.split(/[\s\t]+/).filter(Boolean);
-    if(tokens.length<2 || !/^\d{3,6}$/.test(tokens[0])){ fails.push({line:orig.trim(), why:"형식 인식 불가"}); return; }
-    const msgId=tokens[0];
-    // 이름 없이 "학번 출결상황" 형식 vs "학번 이름 출결상황" 형식 판별
-    let name=null, statusRaw=null;
-    if(tokens.length===2){
-      // 토큰이 2개: 학번 + 출결상황 (이름 생략)
-      statusRaw=tokens[1];
-    } else {
-      // 토큰이 3개 이상: 학번 + 이름 + 출결상황
-      name=tokens[1];
-      statusRaw=tokens.slice(2).join("");
-      // 이름 자리가 출결상황처럼 보이면 이름 없는 형식으로 재시도
-      if(!resolveStatus(statusRaw) && resolveStatus(tokens.slice(1).join(""))){
-        name=null; statusRaw=tokens.slice(1).join("");
-      }
+  const ok=[], fails=res.fails.slice(), touched={};
+  res.items.forEach(it=>{
+    const id=it.stu.id, prev=rec[id], ps=it.ps;
+    // 학번 없는 후속 줄: 직전 상황이 미입실이거나 같은 종류일 때만 덮어쓴다
+    if(it.follow && prev && prev.status!=="미입실" && categoryOf(prev.status)!==categoryOf(ps.status)){
+      fails.push({line:it.line, why:it.stu.name+" 추가 출결(한 학생당 1건만 기록) — 직접 확인"}); return;
     }
-    const status=resolveStatus(statusRaw);
-    if(!status){ fails.push({line:orig.trim(), why:"출결 상황 인식 불가"}); return; }
-    const stu=findStudent(c.students, msgId);
-    if(!stu){ fails.push({line:orig.trim(), why:"명단에 없는 학번("+msgId+")"}); return; }
-    const entry={status};
-    if(needsProof(status)) entry.proof="미제출";
-    // 반드시 명단의 학번(stu.id)으로 저장 (메시지 학번과 형식이 달라도 정상 반영)
-    rec[stu.id]=entry; applied++;
-    ok.push({id:stu.id, name:stu.name, status, mismatch:(name && name!==stu.name)});
+    const same=prev && prev.status===ps.status;
+    const entry={status:ps.status};
+    const period=ps.period || (same? prev.period : null);
+    if(period) entry.period=period;
+    if(needsProof(ps.status)) entry.proof=(same&&prev.proof)? prev.proof : "미제출";
+    const reason=(same&&prev.reason)? prev.reason : ps.reason;
+    if(reason && needsReason(ps.status)) entry.reason=reason;
+    rec[id]=entry; touched[id]=true;
+    const i=ok.findIndex(o=>o.id===id); if(i>=0) ok.splice(i,1);
+    ok.push({id, name:it.stu.name, status:entry.status, period:entry.period, reason:entry.reason, mismatch:it.mismatch, idNote:it.idNote});
   });
-  if(applied>0){ save(); renderAttendance(); }
+  const arrived=[];
+  res.arrived.forEach(a=>{ const r=rec[a.stu.id]; if(r && r.status==="미입실"){ delete rec[a.stu.id]; arrived.push(a.stu); } });
+  const applied=ok.length;
+  if(Object.keys(rec).length===0) delete data.records[c.id][curDate];
+  if(applied>0||arrived.length){ save(); renderAttendance(); }
+  ok.sort((a,b)=>String(a.id).localeCompare(String(b.id),"ko",{numeric:true}));
   const box=document.getElementById("kakaoResult");
   let html="";
   if(applied>0){
     html+=`<p class="hint" style="margin-top:12px;"><b style="color:var(--blue);">${applied}명</b> 기록 완료 (날짜: ${curDate})</p>`;
-    html+='<table><tr><th>학번</th><th>이름</th><th>상황</th></tr>';
-    ok.forEach(r=>{ html+=`<tr><td>${r.id}</td><td class="name">${esc(r.name)}${r.mismatch?' <span style="color:#f59e0b;">(이름 상이)</span>':''}</td><td>${esc(r.status)}</td></tr>`; });
+    html+='<table><tr><th>학번</th><th>이름</th><th>상황</th><th>교시</th><th>사유</th></tr>';
+    ok.forEach(r=>{ html+=`<tr><td>${r.id}</td><td class="name">${esc(r.name)}${r.mismatch?' <span style="color:#f59e0b;">(이름 상이)</span>':''}${r.idNote?' <span style="color:#f59e0b;">(학번 상이)</span>':''}</td><td>${esc(r.status)}</td><td>${r.period||"-"}</td><td style="font-size:11px;">${r.reason?esc(r.reason):"-"}</td></tr>`; });
     html+='</table>';
   } else { html+='<p class="hint" style="margin-top:12px;">기록된 항목이 없습니다.</p>'; }
+  if(arrived.length) html+=`<p class="hint">입실 확인으로 미입실 해제: ${arrived.map(s=>esc(s.name)).join(", ")}</p>`;
+  const notes=[];
+  if(res.otherClass) notes.push(`다른 반 학생 ${res.otherClass}줄`);
+  if(res.otherDateLines) notes.push(`다른 날짜 ${res.otherDateLines}줄`);
+  if(notes.length) html+=`<p class="hint">건너뜀: ${notes.join(" · ")}${res.dates.length&&res.dates.indexOf(curDate)<0&&res.otherDateLines?` (붙여넣은 날짜: ${res.dates.join(", ")} — 상단 날짜를 맞춰 주세요)`:""}</p>`;
   if(fails.length){
-    html+=`<div class="sec-label" style="color:#b91c1c;">⚠️ 인식 실패 ${fails.length}건 (직접 확인 필요)</div>`;
+    html+=`<div class="sec-label" style="color:#b91c1c;">⚠️ 확인 필요 ${fails.length}건</div>`;
     html+='<table><tr><th>원문</th><th>사유</th></tr>';
     fails.forEach(f=>{ html+=`<tr><td style="text-align:left;">${esc(f.line)}</td><td>${esc(f.why)}</td></tr>`; });
     html+='</table>';
   }
   box.innerHTML=html;
-  if(applied>0) toast(applied+"명 기록됨"+(fails.length?(", "+fails.length+"건 실패"):""));
-  else if(fails.length) toast("인식 실패 "+fails.length+"건");
+  if(applied>0) toast(applied+"명 기록됨"+(fails.length?(", "+fails.length+"건 확인 필요"):""));
+  else if(fails.length) toast("확인 필요 "+fails.length+"건");
   else toast("인식할 내용이 없습니다");
 };
 
