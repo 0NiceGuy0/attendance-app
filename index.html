@@ -2268,6 +2268,113 @@ function initSyncUI(){
   }
 }
 
+/* ===== 자동화용 API (예약 루틴 전용, window.attAPI) =====
+   Claude 아침 출결 루틴이 화면을 일일이 누르지 않고 한 번에 기록·확인하도록 제공.
+   모든 함수는 학급반(담임반) 기준이며 확인창(confirm/alert)을 띄우지 않는다. */
+window.attAPI = (function(){
+  const DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
+  function hc(){ return homeroomClass(); }
+  function pick(c, key){
+    key=String(key||"").trim(); if(!key) return {error:"학생 미지정"};
+    if(/^\d{4,6}$/.test(key)){ const s=findStudent(c.students, key); return s? {s} : {error:"학번 없음: "+key}; }
+    const m=c.students.filter(s=>s.name===key);
+    if(m.length===1) return {s:m[0]};
+    return {error: m.length? "동명이인: "+key : "이름 없음: "+key};
+  }
+  function rerender(){
+    try{ renderAttendance(); }catch(e){}
+    try{ const el=document.querySelector(".screen.active"); if(el && el.id==="scMorning") renderMorning(); }catch(e){}
+  }
+  function view(c, date){
+    const rec=(data.records[c.id]||{})[date]||{};
+    const m=morningRec(c.id, date, false);
+    return sortedStudents(c).filter(s=>rec[s.id]||m.marks[s.id]).map(s=>{
+      const r=rec[s.id]||{};
+      return {id:s.id, name:s.name, status:r.status||null, period:r.period||null, reason:r.reason||null, proof:r.proof||null,
+              morning:m.marks[s.id]==="absent"?"미등교":(m.marks[s.id]==="excused"?"사전연락":null), sent:!!(m.sent&&m.sent[s.id])};
+    });
+  }
+  return {
+    version:"1",
+    info(){ const c=hc(); return {today:todayStr(), shownDate:curDate, cls:c.name,
+      students:sortedStudents(c).map(s=>({id:s.id,name:s.name})), statuses:STATUSES.slice(), reasons:REASONS.slice()}; },
+    day(date){ const c=hc(); date=date||todayStr(); if(!DATE_RE.test(date)) return {error:"날짜 형식 YYYY-MM-DD"}; return {date, cls:c.name, items:view(c,date)}; },
+    /* items: [{student:"30801"|"김민서", date?:"YYYY-MM-DD", status, period?, reason?}]
+       opts: {morning:"excused"(기본, 아침점검 사전연락 표시) | false(표시 안 함), overwrite:false(기본)} */
+    set(items, opts){
+      opts=opts||{}; const c=hc(); const out=[]; let changed=false;
+      (items||[]).forEach(it=>{
+        const date=it.date||todayStr();
+        const res={student:it.student, date, status:it.status};
+        if(!DATE_RE.test(date)){ out.push(Object.assign(res,{result:"error", error:"날짜 형식"})); return; }
+        const p=pick(c, it.student); if(p.error){ out.push(Object.assign(res,{result:"error", error:p.error})); return; }
+        const s=p.s; res.id=s.id; res.name=s.name;
+        if(STATUSES.indexOf(it.status)<0 || it.status==="미입실"){ out.push(Object.assign(res,{result:"error", error:"출결 종류 오류: "+it.status})); return; }
+        let period=it.period==null||it.period===""? null : Number(it.period);
+        if(period!=null && (!Number.isInteger(period)||period<1||period>9)){ out.push(Object.assign(res,{result:"error", error:"교시 오류"})); return; }
+        if(!needsPeriod(it.status)) period=null;
+        const reason=it.reason||null;
+        if(reason && REASONS.indexOf(reason)<0){ out.push(Object.assign(res,{result:"error", error:"사유 오류: "+reason})); return; }
+        if(!data.records[c.id]) data.records[c.id]={};
+        const recs=data.records[c.id]; if(!recs[date]) recs[date]={};
+        const prev=recs[date][s.id];
+        const same = prev && prev.status===it.status && (prev.period||null)===period && (prev.reason||null)===reason;
+        if(same){ res.result="unchanged"; }
+        else if(prev && !opts.overwrite){ out.push(Object.assign(res,{result:"conflict", existing:{status:prev.status, period:prev.period||null, reason:prev.reason||null}})); return; }
+        else {
+          const e={status:it.status}; if(period) e.period=period;
+          if(needsProof(it.status)) e.proof=(prev&&prev.status===it.status&&prev.proof)? prev.proof : "미제출";
+          if(reason && needsReason(it.status)) e.reason=reason;
+          recs[date][s.id]=e; changed=true; res.result=prev? "overwritten" : "saved";
+        }
+        if(opts.morning!==false){
+          const m=morningRec(c.id, date, true);
+          if(m.marks[s.id]!=="excused"){ m.marks[s.id]="excused"; delete m.sent[s.id]; changed=true; res.morning="사전연락 표시"; }
+          else res.morning="이미 사전연락";
+        }
+        out.push(res);
+      });
+      if(changed){ save(); rerender(); }
+      return out;
+    },
+    /* 오늘 미등교(문자 대상) 중 아직 발송완료가 아닌 학생: 앱 카드와 같은 번호·문구 */
+    smsQueue(){
+      const c=hc(), today=todayStr(), m=morningRec(c.id, today, false);
+      return sortedStudents(c).filter(s=>m.marks[s.id]==="absent").map(s=>({id:s.id, name:s.name,
+        phone:normPhone(s.phone)||null, sent:!!(m.sent&&m.sent[s.id]), msg:buildMsg(s)}));
+    },
+    markSent(student){
+      const c=hc(), today=todayStr(), p=pick(c, student); if(p.error) return {result:"error", error:p.error};
+      const m=morningRec(c.id, today, true);
+      if(m.marks[p.s.id]!=="absent") return {result:"error", error:"미등교 학생이 아님"};
+      if(m.sent[p.s.id]) return {result:"unchanged"};
+      m.sent[p.s.id]=Date.now(); save(); rerender(); return {result:"saved", id:p.s.id, name:p.s.name};
+    },
+    /* '📋 복사하기'와 같은 형식의 출결상황 줄. fresh = 아직 복사(공유) 안 한 줄 */
+    statusText(date){
+      const c=hc(); date=date||todayStr(); const rec=(data.records[c.id]||{})[date]||{};
+      const suf=r=>{ if(!r.period) return ""; const s=r.status||""; if(s.includes("지각")) return "(~"+r.period+")"; if(s.includes("조퇴")) return "("+r.period+"~)"; if(s.includes("결과")) return "("+r.period+")"; return ""; };
+      const lines=sortedStudents(c).filter(s=>rec[s.id]&&rec[s.id].status).map(s=>s.id+" "+s.name+" "+rec[s.id].status+suf(rec[s.id]));
+      const done=((data.copied||{})[c.id]||{})[date]||[];
+      return {date, all:lines, fresh:lines.filter(l=>done.indexOf(l)<0), text:lines.join("\n")};
+    },
+    /* 공유를 마친 줄을 '복사함'으로 기록(다음 복사하기 때 '추가분'만 나오게) */
+    markCopied(date, lines){
+      const c=hc(); date=date||todayStr(); if(!data.copied) data.copied={}; if(!data.copied[c.id]) data.copied[c.id]={};
+      const done=data.copied[c.id][date]||[]; data.copied[c.id][date]=Array.from(new Set(done.concat(lines||[]))); save(); return {result:"saved", count:data.copied[c.id][date].length};
+    },
+    /* '카카오톡 메시지로 자동 기록' 입력창에 글만 넣는다(기록 버튼은 누르지 않음). 이미 내용이 있으면 덮어쓰지 않음 */
+    setKakaoInput(text){
+      const ki=document.getElementById("kakaoInput"); if(!ki) return {result:"error", error:"입력창 없음"};
+      if(ki.value.trim()) return {result:"conflict", existing:ki.value.slice(0,200)};
+      ki.value=String(text||""); ki.dispatchEvent(new Event("input",{bubbles:true}));
+      return {result:"saved", length:ki.value.length, date:curDate};
+    },
+    /* 상단 날짜를 바꾼다(아침 점검·출석부 화면이 그 날짜를 따름) */
+    goDate(date){ if(!DATE_RE.test(date||"")) return {error:"날짜 형식"}; curDate=date; try{ hdrDate.value=date; }catch(e){} try{ afterDateChange(); }catch(e){ rerender(); } return {shownDate:curDate}; }
+  };
+})();
+
 /* ===== 초기화 ===== */
 function monthStart(){ const d=new Date(),z=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+z(d.getMonth()+1)+"-01"; }
 function monthEnd(){ const d=new Date(),z=n=>String(n).padStart(2,"0"),last=new Date(d.getFullYear(),d.getMonth()+1,0); return last.getFullYear()+"-"+z(last.getMonth()+1)+"-"+z(last.getDate()); }
