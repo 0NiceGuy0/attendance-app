@@ -960,7 +960,7 @@ document.getElementById("btnCopy").onclick=async()=>{
     list = list.filter(s=>rec[s.id].status==="미입실");
     if(list.length===0){ toast("미입실 학생이 없습니다"); return; }
     const pd=classPeriodOn(c.id, curDate);
-    const text = list.map(s=>s.id+" "+s.name+" "+pd+"교시 "+c.name+" 미입실").join("\n");
+    const text = list.map(s=>s.id+" "+s.name+" "+pd+"교시 "+c.name+" 미입실입니다.").join("\n");
     const ok=await copyToClipboard(text);
     toast(ok? list.length+"명 복사되었습니다" : "복사 실패");
   } else {
