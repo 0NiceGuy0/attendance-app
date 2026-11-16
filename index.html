@@ -132,6 +132,10 @@
   .periods{display:grid; grid-template-columns:repeat(9,1fr); gap:5px;}
   .pd{border:1.5px solid var(--line); border-radius:8px; padding:9px 0; text-align:center; font-size:14px; font-weight:700; cursor:pointer; background:#fff;}
   .pd.sel{background:var(--late-b); color:#fff; border-color:var(--late-b);}
+  .rng-toggle{display:flex !important; align-items:center; gap:8px; margin:14px 0 0 !important; font-size:13.5px; font-weight:700; color:var(--txt) !important; cursor:pointer;}
+  .rng-toggle input{width:18px; height:18px; margin:0;}
+  #mRangeBox{background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:2px 10px 10px; margin-top:8px;}
+  #mRangeBox input[type=date]{width:100%; border:1px solid var(--line); border-radius:9px; padding:9px; font-size:14px; font-family:inherit; background:#fff; color:var(--txt);}
   .toast{position:fixed; bottom:84px; left:50%; transform:translateX(-50%); background:#0f172a; color:#fff; padding:11px 18px; border-radius:24px; font-size:14px; z-index:200; opacity:0; transition:opacity .25s; pointer-events:none; font-weight:600;}
   .toast.show{opacity:.95;}
   table{width:100%; border-collapse:collapse; font-size:13px; margin-top:8px;}
@@ -430,6 +434,14 @@
     <div id="mReasonWrap" style="display:none;">
       <div class="sec-label">결석 사유</div>
       <div class="status-grid" id="mReasons"></div>
+    </div>
+    <label class="rng-toggle"><input type="checkbox" id="mRangeOn">여러 날 한번에 입력 (체험학습·입원 등)</label>
+    <div id="mRangeBox" style="display:none;">
+      <div class="row" style="margin-top:0;">
+        <div style="flex:1;"><label>시작일</label><input type="date" id="mFrom"></div>
+        <div style="flex:1;"><label>종료일</label><input type="date" id="mTo"></div>
+      </div>
+      <p class="hint" id="mRangeInfo"></p>
     </div>
     <div class="row">
       <button class="btn gray" id="mCancel">취소</button>
@@ -844,6 +856,10 @@ function openModal(id){
   if(modalStatus && needsProof(modalStatus) && !modalProof) modalProof="미제출";
   document.getElementById("mTitle").textContent=st.name;
   document.getElementById("mSub").textContent=st.id+" · "+curDate;
+  document.getElementById("mRangeOn").checked=false;
+  document.getElementById("mFrom").value=curDate;
+  document.getElementById("mTo").value=curDate;
+  updateRangeUI();
   buildStatusOptions();
   modalBg.classList.add("show");
 }
@@ -923,14 +939,54 @@ function updatePeriodUI(){
 }
 document.getElementById("mCancel").onclick=()=>modalBg.classList.remove("show");
 modalBg.addEventListener("click",e=>{ if(e.target===modalBg) modalBg.classList.remove("show"); });
+/* 여러 날 한번에 입력: 시작일~종료일 중 평일(월~금)에 같은 출결을 기록 */
+function rangeDates(f, t){
+  if(!f||!t) return [];
+  if(f>t){ const x=f; f=t; t=x; }
+  const z=n=>String(n).padStart(2,"0"), out=[];
+  const d=new Date(f+"T00:00:00"), end=new Date(t+"T00:00:00");
+  for(let n=0; d<=end && n<370; n++, d.setDate(d.getDate()+1)){
+    const dow=d.getDay();
+    if(dow!==0 && dow!==6) out.push(d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()));
+  }
+  return out;
+}
+function updateRangeUI(){
+  const on=document.getElementById("mRangeOn").checked;
+  document.getElementById("mRangeBox").style.display=on?"block":"none";
+  if(!on) return;
+  let f=document.getElementById("mFrom").value, t=document.getElementById("mTo").value;
+  const info=document.getElementById("mRangeInfo");
+  if(!f||!t){ info.textContent="시작일과 종료일을 선택하세요."; return; }
+  if(f>t){ const x=f; f=t; t=x; }
+  const days=Math.round((new Date(t+"T00:00:00")-new Date(f+"T00:00:00"))/86400000)+1;
+  const ds=rangeDates(f,t);
+  info.innerHTML=`평일 <b style="color:var(--blue);">${ds.length}일</b>에 같은 내용이 입력됩니다`
+    +(days>ds.length?` (주말 ${days-ds.length}일 제외)`:"")+`.<br>공휴일·재량휴업일이 끼어 있으면 그날은 따로 지워 주세요.`;
+}
+document.getElementById("mRangeOn").onchange=updateRangeUI;
+document.getElementById("mFrom").onchange=updateRangeUI;
+document.getElementById("mTo").onchange=updateRangeUI;
+
 document.getElementById("mSave").onclick=()=>{
   const recs=curRecords();
-  if(!recs[curDate]) recs[curDate]={};
-  const rec=recs[curDate];
-  if(modalStatus===null){ delete rec[modalStudent]; }
-  else { rec[modalStudent]={status:modalStatus}; if(modalPeriod) rec[modalStudent].period=modalPeriod; if(modalProof) rec[modalStudent].proof=modalProof; if(modalReason) rec[modalStudent].reason=modalReason; }
-  if(Object.keys(rec).length===0) delete recs[curDate];
-  save(); modalBg.classList.remove("show"); renderAttendance(); toast("저장되었습니다");
+  const rangeOn=document.getElementById("mRangeOn").checked;
+  const dates=rangeOn? rangeDates(document.getElementById("mFrom").value, document.getElementById("mTo").value) : [curDate];
+  if(rangeOn && !dates.length){ toast("입력할 평일이 없습니다"); return; }
+  if(rangeOn){
+    // 다른 출결이 이미 있는 날은 덮어쓰기 전에 확인
+    const clash=dates.filter(d=>{ const r=(recs[d]||{})[modalStudent]; return r && r.status!==modalStatus; });
+    if(clash.length && !confirm(`${clash.length}일은 이미 다른 출결이 기록되어 있습니다.\n(${clash.map(d=>d.slice(5).replace("-","/")).join(", ")})\n덮어쓸까요?`)) return;
+  }
+  dates.forEach(d=>{
+    if(!recs[d]) recs[d]={};
+    const rec=recs[d];
+    if(modalStatus===null){ delete rec[modalStudent]; }
+    else { rec[modalStudent]={status:modalStatus}; if(modalPeriod) rec[modalStudent].period=modalPeriod; if(modalProof) rec[modalStudent].proof=modalProof; if(modalReason) rec[modalStudent].reason=modalReason; }
+    if(Object.keys(rec).length===0) delete recs[d];
+  });
+  save(); modalBg.classList.remove("show"); renderAttendance();
+  toast(rangeOn? `${dates.length}일 ${modalStatus===null?"기록 삭제":"저장"}되었습니다` : "저장되었습니다");
 };
 
 /* ===== 복사 ===== */
