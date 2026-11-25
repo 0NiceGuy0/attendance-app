@@ -259,7 +259,7 @@
         <div class="c-ex"><b id="mnCntExcused">0</b><span>사전연락</span></div>
         <div class="c-sn"><b id="mnCntSent">0</b><span>발송완료</span></div>
       </div>
-      <p class="hint" style="margin-top:10px;">학생을 탭할 때마다 <b>등교 → 미등교 → 사전연락 → 등교</b> 순으로 바뀝니다. 8시 20분에 빈 자리 학생만 탭하세요.</p>
+      <p class="hint" style="margin-top:10px;">학생을 탭할 때마다 <b>등교 → 미등교 → 사전연락 → 등교</b> 순으로 바뀝니다. 8시 20분에 빈 자리 학생만 탭하세요. 출석부에 출결(미입실 제외)이 기록된 학생은 자동으로 <b>사전연락</b>이 됩니다.</p>
       <div id="mnGrid" class="grid"></div>
       <div id="mnUnseated" style="display:none;"></div>
       <div class="row">
@@ -750,7 +750,8 @@ function renderAttendance(){
     }
     if(mrec){
       const mk=mrec.marks[id];
-      if(mk){
+      // 출결 기록으로 자동 표시된 사전연락은 출석부에 따로 표시하지 않음(이미 출결이 보이므로)
+      if(mk && !(mk==="excused" && mrec.auto && mrec.auto[id])){
         const fl=document.createElement("div"); fl.className="mn-flag";
         if(mk==="absent"){ fl.textContent = mrec.sent[id] ? "🌅✓" : "🌅"; fl.title = mrec.sent[id]?"아침 미등교 · 문자 발송함":"아침 미등교"; }
         else { fl.textContent="📞"; fl.title="아침 사전연락"; }
@@ -1264,8 +1265,36 @@ function homeroomClass(){
   const hc = data.homeroomId && data.classrooms.find(x=>x.id===data.homeroomId);
   return hc || curClass();
 }
-// data.morning[classId][date] = { marks:{studentId:"absent"|"excused"}, sent:{studentId:ts} }
+// data.morning[classId][date] = { marks:{studentId:"absent"|"excused"}, sent:{studentId:ts},
+//   auto:{studentId:true}(출결 기록으로 자동 표시한 사전연락), manual:{studentId:true}(자동 표시를 직접 바꾼 학생) }
+// 학급반은 읽을 때마다 출석부 출결 기록과 맞춘다
 function morningRec(cid, date, create){
+  const hc=homeroomClass();
+  if(hc && hc.id===cid) syncMorningFromRecords(cid, date);
+  return _morningRec(cid, date, create);
+}
+// 출석부에 출결(미입실 제외)이 기록된 학생 → 사전연락. 이미 문자를 보낸 미등교 학생과 직접 바꾼 학생은 그대로 둔다.
+// 출결 기록이 지워지면 자동으로 붙인 사전연락도 지운다.
+function syncMorningFromRecords(cid, date){
+  const recs=((data.records||{})[cid]||{})[date]||{};
+  const ids=Object.keys(recs).filter(id=>recs[id] && recs[id].status && recs[id].status!=="미입실");
+  const m0=data.morning && data.morning[cid] && data.morning[cid][date];
+  if(!ids.length && !(m0 && m0.auto && Object.keys(m0.auto).length)) return;
+  const m=_morningRec(cid, date, true);
+  if(!m.auto) m.auto={};
+  if(!m.manual) m.manual={};
+  ids.forEach(id=>{
+    if(m.manual[id]) return;
+    const mk=m.marks[id];
+    if(!mk || (mk==="absent" && !m.sent[id])){ m.marks[id]="excused"; m.auto[id]=true; }
+  });
+  Object.keys(m.auto).forEach(id=>{
+    if(ids.indexOf(id)>=0) return;
+    if(m.marks[id]==="excused") delete m.marks[id];
+    delete m.auto[id];
+  });
+}
+function _morningRec(cid, date, create){
   if(!data.morning) data.morning={};
   if(!data.morning[cid]){ if(!create) return {marks:{},sent:{}}; data.morning[cid]={}; }
   const m=data.morning[cid];
@@ -1463,6 +1492,8 @@ function gotoAttendanceModal(cid, sid){
 
 function cycleMark(cid, sid){
   const rec=morningRec(cid, curDate, true);
+  // 자동 사전연락을 직접 바꾸면 이후로는 자동 표시하지 않음
+  if(rec.auto && rec.auto[sid]){ delete rec.auto[sid]; if(!rec.manual) rec.manual={}; rec.manual[sid]=true; }
   const cur=rec.marks[sid];
   if(!cur) rec.marks[sid]="absent";
   else if(cur==="absent"){ rec.marks[sid]="excused"; delete rec.sent[sid]; }
